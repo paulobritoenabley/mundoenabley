@@ -1,0 +1,1324 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Mundo Enabley</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@500;600;700&family=Poppins:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+/* Layout: céu em tela cheia com uma ilha-diorama 3D; HUD flutuante no topo, doca de chips na base, painel-cartão à direita (folha inferior no celular).
+   Visual de um único mundo diurno (estilo animação 3D), por escolha: as cores são fixas e não seguem o tema escuro. */
+:root{
+  --sky-1:#4C82D6; --sky-2:#93C5F0; --sky-3:#E6F3FB;
+  --ink:#24164F; --muted:#5D5583; --card:#FFFFFF; --line:#E9E3F6; --soft:#F5F1FD;
+  --purple:#4B2BA8; --magenta:#A0208F; --gold:#F2B841; --blue:#0066FF;
+  --f-display:"Fredoka","Baloo 2","Trebuchet MS",system-ui,sans-serif;
+  --f-body:"Poppins",system-ui,-apple-system,"Segoe UI",sans-serif;
+  --spring:cubic-bezier(.34,1.56,.64,1);
+  --chunk:0 4px 0 rgba(36,22,79,.14),0 12px 26px rgba(36,22,79,.18);
+  color-scheme:light;
+}
+*,*::before,*::after{box-sizing:border-box}
+html,body{height:100%;margin:0}
+body{background:linear-gradient(180deg,var(--sky-1) 0%,var(--sky-2) 52%,var(--sky-3) 100%);color:var(--ink);font-family:var(--f-body);overflow:hidden;-webkit-font-smoothing:antialiased}
+button{font:inherit;color:inherit}
+:focus-visible{outline:3px solid var(--gold);outline-offset:3px}
+[hidden]{display:none !important}
+#scene{position:fixed;inset:0}
+#scene canvas{display:block;touch-action:none}
+
+/* HUD */
+.hud{position:fixed;left:calc(18px + env(safe-area-inset-left,0px));top:calc(env(safe-area-inset-top,0px) + 16px);z-index:5;pointer-events:none;max-width:min(460px,calc(100vw - 36px))}
+.brand{display:inline-flex;align-items:center;gap:10px;background:var(--card);border-radius:999px;padding:7px 16px 7px 12px;box-shadow:var(--chunk);animation:pop .8s var(--spring) both .1s}
+.brand img{height:30px;width:auto;display:block}
+.brand .wm{font:700 24px/1 var(--f-display);color:var(--magenta)}
+.brand small{font:600 11px/1.2 var(--f-body);color:var(--muted);letter-spacing:.06em;text-transform:uppercase;border-left:2px solid var(--line);padding-left:10px}
+.hud h1{font-family:var(--f-display);font-weight:700;font-size:clamp(42px,6.4vw,78px);line-height:.92;margin:.2em 0 0;color:#fff;letter-spacing:-.01em;text-wrap:balance;
+  text-shadow:0 3px 0 #3A2590,0 6px 0 rgba(36,22,79,.45),0 18px 34px rgba(36,22,79,.35)}
+.hud h1 span{display:inline-block;animation:drop .9s var(--spring) both}
+.hud p{color:#fff;font-weight:500;text-shadow:0 1px 10px rgba(36,22,79,.55);font-size:15px;line-height:1.45;max-width:38ch;margin:.55em 0 0;animation:fadeUp .7s ease both 1s}
+@keyframes drop{0%{transform:translateY(-80px) scale(.6,1.4);opacity:0}55%{transform:translateY(6px) scale(1.15,.82);opacity:1}100%{transform:none}}
+@keyframes pop{0%{transform:scale(.3);opacity:0}100%{transform:none;opacity:1}}
+@keyframes fadeUp{0%{transform:translateY(12px);opacity:0}100%{transform:none;opacity:1}}
+
+.tools{position:fixed;right:calc(18px + env(safe-area-inset-right,0px));top:calc(env(safe-area-inset-top,0px) + 18px);display:flex;gap:10px;z-index:6}
+.btn{border:0;border-radius:999px;padding:10px 18px;font:600 15px/1 var(--f-display);letter-spacing:.01em;cursor:pointer;background:var(--gold);color:var(--ink);
+  box-shadow:0 5px 0 #C98A10,0 12px 22px rgba(36,22,79,.25);transition:transform .35s var(--spring),box-shadow .2s;display:inline-flex;align-items:center;gap:8px}
+.btn:hover{transform:translateY(-2px) scale(1.05)}
+.btn:active{transform:translateY(4px) scale(.97);box-shadow:0 1px 0 #C98A10,0 4px 10px rgba(36,22,79,.25)}
+.btn.ghost{background:var(--card);box-shadow:0 5px 0 #D4CBEA,0 12px 22px rgba(36,22,79,.2)}
+.btn.ghost:active{box-shadow:0 1px 0 #D4CBEA}
+.btn .ico{width:0;height:0;border-left:9px solid currentColor;border-top:6px solid transparent;border-bottom:6px solid transparent}
+.btn.playing .ico{width:10px;height:12px;border:0;border-left:3px solid currentColor;border-right:3px solid currentColor}
+
+/* labels 3D */
+.labels{position:fixed;inset:0;pointer-events:none;z-index:3;overflow:hidden}
+.lbl{position:absolute;left:0;top:0;will-change:transform;pointer-events:none}
+.lbl .lb{display:inline-flex;align-items:center;gap:7px;white-space:nowrap;background:var(--card);border-radius:999px;padding:5px 12px;font:600 14px/1.1 var(--f-display);color:var(--ink);
+  box-shadow:0 3px 0 rgba(36,22,79,.16),0 8px 18px rgba(36,22,79,.22);transform-origin:50% 120%;transition:transform .5s var(--spring),opacity .18s;cursor:pointer;pointer-events:auto;position:relative}
+.lbl .lb::after{content:"";position:absolute;left:50%;bottom:-6px;margin-left:-6px;border:6px solid transparent;border-bottom:0;border-top-color:var(--card)}
+.lbl .lb i{width:10px;height:10px;border-radius:50%;background:var(--c,#999);flex:0 0 auto}
+.lbl.big .lb{font-size:18px;padding:7px 15px;border:3px solid var(--c)}
+.lbl.big .lb::after{bottom:-9px}
+.lbl.big .lb small{font:500 12px var(--f-body);color:var(--muted)}
+.lbl.case .lb b{color:var(--c);font-size:17px;font-weight:700}
+.lbl.person .lb{font-size:13px;padding:4px 10px}
+.lbl.hide .lb{transform:scale(.2) translateY(20px);opacity:0;pointer-events:none}
+.lbl.sel .lb{background:var(--ink);color:#fff;transform:scale(1.12)}
+.lbl.sel .lb::after{border-top-color:var(--ink)}
+.lbl.sel .lb small{color:#CFC6F0}
+.lbl .lb:hover{transform:scale(1.1)}
+@media (max-width:640px){ .lbl.sm{display:none} .lbl.big .lb{font-size:15px;padding:5px 11px} .lbl.big .lb small{display:none} }
+
+/* doca */
+.dock{position:fixed;left:0;right:0;bottom:calc(env(safe-area-inset-bottom,0px) + 14px);z-index:6;display:flex;gap:9px;overflow-x:auto;padding:8px max(18px,env(safe-area-inset-right,0px)) 10px max(18px,env(safe-area-inset-left,0px));scrollbar-width:none}
+.dock::-webkit-scrollbar{display:none}
+.chip{flex:0 0 auto;display:flex;align-items:center;gap:8px;background:var(--card);border:0;border-radius:999px;padding:9px 15px;cursor:pointer;font:600 14.5px/1 var(--f-display);color:var(--ink);
+  box-shadow:0 4px 0 #D4CBEA,0 10px 20px rgba(36,22,79,.18);transition:transform .4s var(--spring),background .2s,color .2s}
+.chip i{width:11px;height:11px;border-radius:50%;background:var(--c,#999);flex:0 0 auto;transition:transform .4s var(--spring)}
+.chip:hover{transform:translateY(-3px) scale(1.06)}
+.chip:hover i{transform:scale(1.5)}
+.chip:active{transform:translateY(3px) scale(.96)}
+.chip.on{background:var(--ink);color:#fff;box-shadow:0 4px 0 #120A30,0 10px 20px rgba(36,22,79,.3)}
+.hint{position:fixed;left:calc(20px + env(safe-area-inset-left,0px));bottom:calc(env(safe-area-inset-bottom,0px) + 74px);font:500 13px var(--f-body);color:#fff;text-shadow:0 1px 6px rgba(36,22,79,.6);z-index:5;pointer-events:none}
+
+/* número em destaque */
+#story{position:fixed;left:50%;bottom:calc(env(safe-area-inset-bottom,0px) + 84px);transform:translateX(-50%);z-index:4;pointer-events:none;text-align:center;width:min(620px,calc(100vw - 40px));opacity:0;transition:opacity .25s}
+#story.on{opacity:1}
+#story b{display:block;font:700 clamp(54px,9vw,104px)/.9 var(--f-display);color:#fff;font-variant-numeric:tabular-nums;
+  text-shadow:0 3px 0 var(--sc,#4B2BA8),0 6px 0 var(--sc,#4B2BA8),0 9px 0 rgba(36,22,79,.35),0 22px 40px rgba(36,22,79,.35)}
+#story span{display:inline-block;margin-top:10px;font:600 15px/1.35 var(--f-body);color:var(--ink);background:rgba(255,255,255,.92);border-radius:999px;padding:6px 14px;box-shadow:var(--chunk)}
+#story.on b{animation:storyPop .8s var(--spring) both}
+#story.on span{animation:fadeUp .5s ease both .15s}
+@keyframes storyPop{0%{transform:scale(.3) rotate(-8deg);opacity:0}60%{transform:scale(1.08) rotate(2deg);opacity:1}100%{transform:none}}
+@media (min-width:900px){ body.panel-open #story{left:calc(50% - 210px)} }
+@media (max-width:640px){ #story{bottom:auto;top:calc(env(safe-area-inset-top,0px) + 168px)} body.panel-open #story{opacity:0} .hint{display:none} }
+
+/* painel */
+aside#panel{position:fixed;z-index:10;right:calc(16px + env(safe-area-inset-right,0px));top:calc(env(safe-area-inset-top,0px) + 76px);bottom:calc(env(safe-area-inset-bottom,0px) + 84px);
+  width:min(410px,calc(100vw - 32px));background:var(--card);border-radius:28px;display:flex;flex-direction:column;overflow:hidden;
+  box-shadow:0 8px 0 rgba(36,22,79,.12),0 30px 60px rgba(36,22,79,.3);transform:translateX(calc(100% + 60px)) rotate(4deg);transition:transform .7s var(--spring)}
+aside#panel.open{transform:none}
+@media (max-width:640px){ aside#panel{left:8px;right:8px;width:auto;top:auto;bottom:calc(env(safe-area-inset-bottom,0px) + 8px);max-height:62vh;transform:translateY(calc(100% + 80px))} }
+.ph{padding:18px 22px 16px;background:var(--pc,#4B2BA8);color:#fff;position:relative;flex:0 0 auto}
+.ph::after{content:"";position:absolute;left:0;right:0;bottom:-14px;height:14px;background:radial-gradient(circle at 10px 0,var(--pc,#4B2BA8) 10px,transparent 10.5px) 0 0/20px 14px repeat-x}
+.ph .kind{margin:0 0 4px;font:600 12px/1.3 var(--f-body);letter-spacing:.06em;text-transform:uppercase;opacity:.85;padding-right:44px}
+.ph h2{margin:0;font:700 32px/1 var(--f-display);padding-right:44px;text-wrap:balance}
+.close{position:absolute;right:14px;top:14px;width:38px;height:38px;border-radius:50%;border:0;background:rgba(255,255,255,.22);color:#fff;cursor:pointer;font:600 22px/1 var(--f-display);transition:transform .4s var(--spring)}
+.close:hover{transform:rotate(90deg) scale(1.1)}
+.pb{overflow:auto;padding:24px 22px 26px;flex:1;font-size:14.5px;line-height:1.5}
+.pb h3{font:700 19px/1.15 var(--f-display);margin:22px 0 10px;color:var(--ink)}
+.pb h3:first-child{margin-top:0}
+.pb p{margin:0 0 10px;color:var(--ink)}
+.pb .lead{font-size:15.5px}
+.pb .muted{color:var(--muted)}
+.ls{list-style:none;margin:0;padding:0;display:grid;gap:8px}
+.ls li{position:relative;padding-left:22px}
+.ls li::before{content:"";position:absolute;left:3px;top:.55em;width:9px;height:9px;border-radius:50%;background:var(--pc,#4B2BA8)}
+.feat{display:grid;gap:9px}
+.feat div{background:var(--soft);border-radius:16px;padding:11px 14px}
+.feat b{display:block;font:600 16px/1.2 var(--f-display);margin-bottom:3px}
+.feat em{display:block;font-style:normal;font-size:12.5px;color:var(--muted);margin-top:4px}
+.feat em::before{content:"Dor: ";font-weight:600;color:var(--pc,#4B2BA8)}
+.bigres{display:flex;align-items:baseline;gap:10px;background:var(--soft);border-radius:20px;padding:14px 16px;margin:4px 0 14px}
+.bigres b{font:700 40px/1 var(--f-display);color:var(--pc,#4B2BA8);white-space:nowrap}
+.bigres span{font-size:14px;line-height:1.35}
+.quote{background:var(--soft);border-radius:20px 20px 20px 6px;padding:14px 16px;margin-top:14px;font-size:14px}
+.quote cite{display:block;font-style:normal;font-size:12.5px;color:var(--muted);margin-top:6px}
+.flow{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin:4px 0 12px}
+.flow span{background:var(--soft);border-radius:999px;padding:6px 11px;font:600 13px/1.2 var(--f-display)}
+.flow s{text-decoration:none;color:var(--pc,#4B2BA8);font-weight:700}
+.tiles{display:grid;grid-template-columns:1fr 1fr;gap:9px}
+.tiles div{background:var(--soft);border-radius:18px;padding:12px 14px}
+.tiles b{display:block;font:700 26px/1 var(--f-display);color:var(--pc,#4B2BA8)}
+.tiles span{font-size:12.5px;color:var(--muted);line-height:1.3;display:block;margin-top:4px}
+.go{display:flex;flex-wrap:wrap;gap:7px}
+.go button{border:0;background:var(--soft);border-radius:999px;padding:7px 12px;cursor:pointer;font:600 13.5px/1.1 var(--f-display);display:inline-flex;align-items:center;gap:7px;transition:transform .35s var(--spring),background .2s}
+.go button i{width:9px;height:9px;border-radius:50%;background:var(--c,#999)}
+.go button:hover{transform:scale(1.07);background:#EAE2FB}
+.go button small{font:500 11.5px var(--f-body);color:var(--muted)}
+.logos{display:grid;grid-template-columns:repeat(auto-fill,minmax(92px,1fr));gap:8px}
+.logos button{border:0;background:#fff;border-radius:14px;box-shadow:0 0 0 2px var(--line);padding:6px;cursor:pointer;transition:transform .35s var(--spring)}
+.logos button:hover{transform:scale(1.08) rotate(-2deg)}
+.logos img{display:block;width:100%;height:auto}
+.logo-big{display:block;width:min(260px,100%);margin:0 auto 14px}
+.partner{display:flex;align-items:center;justify-content:center;gap:16px;flex-wrap:wrap;margin-bottom:14px}
+.partner img{height:38px;width:auto}
+.person{background:var(--soft);border-radius:18px;padding:12px 14px;margin-bottom:9px}
+.person b{font:600 17px/1.15 var(--f-display);display:block}
+.person .role{font-size:13px;color:var(--muted)}
+.person .when{font-size:13px;margin-top:6px}
+.contact{display:flex;align-items:center;gap:8px;margin-top:6px;font-size:13px;flex-wrap:wrap}
+.contact code{font:500 12.5px var(--f-body);background:#fff;border-radius:8px;padding:3px 8px;user-select:all;word-break:break-all}
+.copy{border:0;background:var(--pc,#4B2BA8);color:#fff;border-radius:999px;padding:4px 10px;font:600 12px var(--f-display);cursor:pointer}
+.steps{display:grid;gap:9px;counter-reset:st}
+.steps div{background:var(--soft);border-radius:16px;padding:11px 14px 11px 48px;position:relative}
+.steps div::before{counter-increment:st;content:counter(st);position:absolute;left:12px;top:11px;width:26px;height:26px;border-radius:50%;background:var(--pc,#4B2BA8);color:#fff;font:700 15px/26px var(--f-display);text-align:center}
+.steps b{font:600 16px/1.2 var(--f-display);display:block}
+table.ex{width:100%;border-collapse:collapse;font-size:13.5px;font-variant-numeric:tabular-nums}
+table.ex td{padding:6px 0;border-bottom:1px solid var(--line)}
+table.ex td:last-child{text-align:right;font-weight:600}
+#toast{position:fixed;left:50%;top:calc(env(safe-area-inset-top,0px) + 18px);transform:translate(-50%,-80px);background:var(--ink);color:#fff;border-radius:999px;padding:9px 16px;font:600 14px var(--f-display);z-index:30;transition:transform .5s var(--spring)}
+#toast.on{transform:translate(-50%,0)}
+#fail{position:fixed;inset:0;display:grid;place-items:center;text-align:center;padding:24px;font:600 18px var(--f-display);color:#fff}
+@media (max-width:640px){
+  .hud h1{font-size:40px} .hud p{font-size:13.5px;max-width:30ch}
+  .tools{top:auto;bottom:calc(env(safe-area-inset-bottom,0px) + 72px);right:12px}
+  .btn{padding:9px 14px;font-size:14px}
+  .brand small{display:none}
+}
+@media (prefers-reduced-motion:reduce){ *,*::before,*::after{animation-duration:.01ms !important;transition-duration:.01ms !important} }
+</style>
+</head>
+<body>
+<div id="scene" aria-hidden="true"></div>
+<div class="labels" id="labels"></div>
+
+<header class="hud">
+  <div class="brand"><img id="brand-logo" alt="Enabley" hidden><span class="wm" id="brand-wm">enabley</span><small>Base comercial</small></div>
+  <h1 id="title" aria-label="Mundo Enabley"></h1>
+  <p>Treinamento, conhecimento e comunicação para quem trabalha longe de um computador. Clique em qualquer coisa: prédios, pessoas, balões e blocos.</p>
+</header>
+<div class="tools">
+  <button class="btn" id="btn-tour" type="button"><span class="ico"></span><span id="tour-txt">Tour guiado</span></button>
+  <button class="btn ghost" id="btn-index" type="button">Índice</button>
+</div>
+
+<div id="story" aria-live="polite"><b id="story-big"></b><span id="story-cap"></span></div>
+<nav class="dock" id="dock" aria-label="Lugares do Mundo Enabley"></nav>
+<div class="hint">Arraste para girar · role para aproximar · botão do meio move a câmera · clique em tudo</div>
+
+<aside id="panel" aria-label="Detalhes">
+  <div class="ph"><p class="kind" id="p-kind"></p><h2 id="p-title"></h2><button class="close" id="p-close" type="button" aria-label="Fechar painel">×</button></div>
+  <div class="pb" id="p-body"></div>
+</aside>
+<div id="toast" role="status"></div>
+
+<script src="assets/logos.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+<script>
+(async function(){
+'use strict';
+const RM = matchMedia('(prefers-reduced-motion: reduce)').matches;
+const ASSETS = window.ENABLEY_ASSETS || {};
+const $ = s => document.querySelector(s);
+const sleep = ms => new Promise(r=>setTimeout(r,ms));
+
+/* título com letras elásticas */
+(function(){ const h = $('#title'); 'Mundo Enabley'.split('').forEach((ch,i)=>{ const s = document.createElement('span'); s.textContent = ch===' ' ? ' ' : ch; s.style.animationDelay = (0.25 + i*0.05)+'s'; s.setAttribute('aria-hidden','true'); h.appendChild(s); }); })();
+
+/* =========================================================
+   CONTEÚDO (fonte: Base comercial Enabley, basecomercialenabley.vercel.app)
+   ========================================================= */
+const C = { purple:'#4B2BA8', magenta:'#A0208F', gold:'#F2B841', blue:'#0066FF', ink:'#24164F' };
+
+const SEGS = {
+  varejo:{ n:'Varejo', c:'#FF7A45', lead:'O setor onde a Enabley tem mais prova e mais resultado documentado.',
+    dores:['Rede distribuída com abertura e fechamento constante de lojas','Alta rotatividade e integração de novos colaboradores todo mês','Campanha e mudança de preço que precisam chegar no mesmo dia a toda a rede','Perda operacional e falta de padronização entre unidades','Colaborador sem computador e sem e-mail corporativo'],
+    entra:['Integração de novo colaborador em trilha curta e mensurável','Campanha e procedimento publicados uma vez, segmentados por loja, cargo e turno','Dashboard por loja e regional para o gestor cobrar a própria equipe','QR code no ponto de venda e no estoque para consulta imediata'],
+    ancora:'Novo Atacarejo: 86% de redução no tempo de integração, de 7 dias para 1 dia.' },
+  franquias:{ n:'Franquias', c:'#FFB020', lead:'Modelo em que a governança da marca depende de gente que não é funcionária da franqueadora.',
+    dores:['Padronização e excelência no atendimento em unidades que não são próprias','Franqueado com autonomia demais ou de menos','Lentidão para capacitar a rede inteira no lançamento de produto ou serviço','Franqueadora sem visibilidade do que acontece dentro de cada unidade'],
+    entra:['Autonomia para o franqueado gerir a própria equipe, sem ver dados dos outros','Governança da marca na matriz com relatório consolidado e segregado','Trilhas por função dentro da unidade','Aulas ao vivo integradas para campanhas e lançamentos'],
+    ancora:'Depyl Action: de 3 cursos por ano para 1 por mês, com 400% mais participação em aulas ao vivo.' },
+  industria:{ n:'Indústria', c:'#5B6B8C', lead:'Plantas, turnos e terceiros que precisam de evidência de treinamento.',
+    dores:['Treinamento obrigatório de NR e segurança com exigência de evidência','Terceiros e prestadores que precisam de certificação para entrar na planta','Conhecimento técnico concentrado em poucas pessoas','Turnos e plantas distribuídas, difíceis de reunir para treinamento presencial'],
+    entra:['Certificação e recertificação automáticas, com QR code liberando acesso a área restrita','Checklist de auditoria e observação em campo','Conteúdo técnico criado internamente, sem depender de produtora','Treinamento de distribuidores e integradores na mesma plataforma'],
+    ancora:'Codimar: 52% de aumento na qualidade de fabricação e 35% de redução nos custos trabalhistas.' },
+  alimentos:{ n:'Alimentos e bebidas', c:'#E5484D', lead:'Redes de engarrafadores, distribuidores e parceiros que não são funcionários diretos.',
+    dores:['Rede de engarrafadores e distribuidores que não são funcionários diretos','Custo alto dos programas de treinamento tradicionais','Necessidade de padronizar processo e marca em muitos parceiros','Exigência de cumprimento de contratos de franquia'],
+    entra:['Comunidade de aprendizagem para parceiros, síncrona e assíncrona','Relatório e certificação para comprovar cumprimento contratual','Conteúdo multi-idioma para operação regional'],
+    ancora:'Coca-Cola: 79% de economia nos custos com treinamento e 88% de aumento nos acessos.' },
+  agro:{ n:'Agro', c:'#3DAA4F', lead:'Operação pulverizada em várias unidades e estados, com cooperados e colaboradores deskless: o perfil em que o e-mail corporativo trava o alcance.',
+    dores:['Equipe em campo, longe de escritório e muitas vezes sem conectividade estável','Cooperados e produtores a capacitar, além dos próprios colaboradores','Sazonalidade que concentra treinamento em janelas curtas','Segurança do trabalho em operação de risco'],
+    entra:['Modo offline com sincronização ao reconectar','Microlearning consumido no tempo disponível do campo','Certificação de segurança com evidência auditável','QR code em equipamento e silo para consulta no ponto de uso'],
+    ancora:'Cocamar: de 60% para 100% de alcance dos treinamentos, com acesso via CPF em toda a operação.' },
+  telecom:{ n:'Telecom', c:'#7B3FE4', lead:'Canais, revendas e técnicos terceirizados num mercado de oferta que muda toda hora.',
+    dores:['Rede de canais, revendas e técnicos terceirizados','Lançamento constante de produto e mudança de oferta','Alta rotatividade em atendimento e campo','Exigência de acessibilidade em operação de grande porte'],
+    entra:['Capacitação de canal e técnico externo na mesma plataforma da equipe própria','Comunicação de oferta segmentada por região e canal','Recursos de acessibilidade nativos e integração com Hand Talk e VLibras'],
+    ancora:'Vivo é referência de escala e de estratégia de acessibilidade.' },
+  energia:{ n:'Energia e utilities', c:'#00A3C4', lead:'Operação crítica, regulada e com equipe técnica espalhada em campo.',
+    dores:['Operação crítica com exigência regulatória e de segurança','Equipe técnica distribuída em campo e em área remota','Necessidade de comprovar treinamento em auditoria e fiscalização','Terceiros executando atividade de risco'],
+    entra:['Certificação obrigatória com controle de vencimento automático','Procedimento acessível por QR code no ativo','Checklist de campo para registro de observação','Relatório com dado histórico para auditoria'] },
+  transporte:{ n:'Transporte e logística', c:'#3A6FD8', lead:'Motorista e equipe de rota quase nunca estão na base.',
+    dores:['Motorista e equipe de rota, quase nunca na base','Padronização de procedimento de carga, descarga e atendimento','Treinamento de segurança e direção defensiva com comprovação','Rotatividade e integração constante'],
+    entra:['Conteúdo curto consumido no celular entre rotas','Modo offline para área sem cobertura','Certificação com evidência para cliente e seguradora'] },
+  farma:{ n:'Farma', c:'#14A88F', lead:'O comprador típico não é RH: é a área comercial ou corporate querendo que o time de vendas chegue atualizado na rua, muitas vezes em vários países.',
+    dores:['Força de vendas e propagandistas com atualização constante de produto','Exigência regulatória e de compliance sobre o que é comunicado','Treinamento de distribuidores e parceiros externos','Evidência de que a orientação foi lida e compreendida'],
+    entra:['Atualização de produto distribuída e rastreada para o time de vendas','Assinatura eletrônica como evidência de ciência','Avaliação obrigatória antes de liberar material comercial','Conteúdo multi-idioma, replicando o mesmo treinamento em vários países'] },
+  financeiro:{ n:'Financeiro', c:'#2F9E6E', lead:'Norma que muda com frequência e rede de parceiros independentes.',
+    dores:['Exigência regulatória e de compliance com prazo','Rede de correspondentes, consultores e parceiros independentes','Atualização de produto e de norma com frequência alta','Necessidade de trilha de auditoria completa'],
+    entra:['Comunicação de norma com rastreio e assinatura eletrônica','Certificação obrigatória com recertificação automática','Relatório histórico por colaborador e por data','Capacitação de parceiro independente na mesma base'],
+    ancora:'MSIG Insurance: base única atendendo 46 países e mais de 40 mil funcionários.' },
+  saude:{ n:'Saúde', c:'#EC5B9A', lead:'Equipes em turnos e protocolos que mudam.',
+    dores:['Equipe em turnos, difícil de reunir para treinamento','Protocolo clínico que muda e precisa chegar a todos'], entra:[] },
+  servicos:{ n:'Outros segmentos', c:'#8A7CA8', lead:'Clientes que aparecem na lâmina de marcas da Enabley.', dores:[], entra:[] }
+};
+
+/* caixas de cada logo na lâmina de marcas (coordenadas na escala 2000 px de largura) */
+const LOGOS = [
+['unilever','Unilever','industria',780,262,855,342],['cocacola','Coca-Cola','alimentos',915,268,1040,322],['corona','Corona','alimentos',1066,258,1180,322],
+['heineken','Heineken','alimentos',1210,284,1350,320],['vivo','Vivo','telecom',1373,282,1462,320],['aegea','Aegea','energia',1474,284,1570,322],
+['fiep','Sistema Fiep','industria',1585,266,1656,340],['sulgas','Sulgás','energia',1676,278,1760,318],['magnum','Magnum','alimentos',1782,274,1878,312],
+['ldc','LDC (Louis Dreyfus)','agro',774,390,864,438],['stellantis','Stellantis','industria',892,386,1064,426],['cargill','Cargill','agro',1092,378,1196,432],
+['scania','Scania','transporte',1242,372,1346,436],['metrorio','Metrô Rio','energia',1388,390,1504,426],['granado','Granado','varejo',1534,396,1630,430],
+['vtal','V.tal','telecom',1676,392,1756,426],['isa','ISA Energia','energia',1786,386,1884,436],['cocamar','Cocamar','agro',750,498,888,532],
+['abbott','Abbott','farma',916,496,1044,534],['catarinense','Catarinense Pharma','farma',1080,470,1194,552],['biolab','Biolab','farma',1236,488,1324,532],
+['supera','Supera Farma','farma',1373,488,1478,526],['villares','Villares Metals','industria',1504,472,1642,532],['cejam','CEJAM','saude',1666,470,1740,534],
+['hagana','Hagana','servicos',1798,470,1862,540],['giraffas','Giraffas','franquias',744,586,884,630],['chilli','Chilli Beans','varejo',934,568,1022,654],
+['cna','CNA','franquias',1062,590,1162,636],['chinainbox','China in Box','franquias',1194,580,1302,632],['spoleto','Spoleto','franquias',1336,592,1470,618],
+['pizzaria','Pizzaria Spoleto','franquias',1488,584,1594,624],['gendai','Gendai','franquias',1634,588,1754,626],['cba','CBA','industria',1776,588,1870,626],
+['rojemac','Grupo Rojemac','servicos',756,683,879,744],['motorola','Motorola','varejo',923,676,1032,748],['topazio','Banco Topázio','financeiro',1058,698,1162,734],
+['alares','Alares','telecom',1186,692,1300,734],['novo','Novo Atacarejo','varejo',1321,676,1410,744],['mateus','Grupo Mateus','varejo',1438,680,1550,746],
+['bacio','Bacio di Latte','varejo',1573,684,1700,738],['bempromotora','BemPromotora','financeiro',1704,698,1870,730],['emulzint','Emulzint Zeelandia','alimentos',753,793,887,836],
+['oralunic','OralUnic','franquias',920,786,1027,842],['avel','Avel XP','financeiro',1068,798,1184,836],['combio','ComBio','agro',1211,798,1317,834],
+['nio','Nio','telecom',1343,796,1434,834],['unicasa','Unicasa','industria',1453,802,1562,832],['everest','Everest','servicos',1591,786,1702,838],
+['desktop','Desktop','telecom',1733,796,1877,828]
+];
+const ENABLEY_BOX = [1752,1012,1970,1098];
+
+const CASES = [
+  { k:'novo', n:'Novo Atacarejo', seg:'varejo', logo:'novo', type:'shop', lbl:'86%', story:{to:86,suf:'%',cap:'menos tempo de integração: de 7 dias para 1 dia'},
+    about:'Rede de atacarejo com 19 mil colaboradores, 67 lojas em 43 cidades e cerca de 6 mil admissões por ano. Três anos de operação contínua com a Enabley.',
+    big:['86%','de redução no tempo de integração, de 7 dias para 1 dia'],
+    des:'Integração de novo colaborador consumindo 7 dias antes de a pessoa estar produtiva, em uma rede com rotatividade alta. Uma reestruturação recente reduziu o quadro e aumentou a exigência por pessoa.',
+    sol:'Seis cursos obrigatórios na integração, entregues no celular por trilha de cargo e loja, com acompanhamento de conclusão e nota por unidade e gestor.',
+    res:['Mais de 7.000 colaboradores capacitados','6 cursos obrigatórios estruturados na integração','Mais de 80% de taxa de conclusão','Mais de 70% de nota média','3 anos de operação contínua'] },
+  { k:'chilli', n:'Chilli Beans', seg:'varejo', logo:'chilli', type:'shop', lbl:'+300%', story:{to:300,pre:'+',suf:'%',cap:'de engajamento nos conteúdos da Unichilli'},
+    about:'Maior rede especializada em óculos e acessórios da América Latina, com mais de 1.000 pontos de venda e mais de 4.000 funcionários.',
+    big:['+300%','de aumento no engajamento nos conteúdos da plataforma'],
+    des:'Coleções e temáticas novas surgindo toda semana. A extranet anterior não permitia medir cada colaborador individualmente.',
+    sol:'Treinamentos centralizados na Enabley, app mobile, gestão individual por líder e relatórios em tempo real. A plataforma virou a Unichilli.',
+    res:['Economia de 83% do tempo gasto para visualizar conteúdos','Mais de 6 mil certificações emitidas','Conteúdos inseridos semanalmente, com alta interação em todo o Brasil'],
+    quote:['Nossos treinamentos transformam o engajamento da Chilli Beans.','Luana Vilella · Gestão de Comunicação e Treinamentos'] },
+  { k:'coca', n:'Coca-Cola', seg:'alimentos', logo:'cocacola', type:'factory', lbl:'79%', story:{to:79,suf:'%',cap:'de economia nos custos com treinamentos'},
+    about:'Empresa de bebidas com mais de 500 marcas, presente em mais de 200 países.',
+    big:['79%','de economia nos custos com treinamentos'],
+    des:'Acelerar as capacidades de negócio dos Parceiros de Engarrafamento. Os programas anteriores foram descontinuados porque os engarrafadores consideravam os recursos alocados altos demais.',
+    sol:'Um Learning Hub, primeira comunidade de aprendizagem digital da empresa, síncrona e assíncrona, 24 horas por dia. A escolha veio após um piloto com 600 participantes de 8 dos 10 parceiros.',
+    res:['88% de aumento no número de acessos aos cursos','65% de economia do tempo gasto com treinamentos, sem perder eficácia','Alta adoção da experiência online'],
+    quote:['A Enabley nos ajudou com consistência e flexibilidade para iniciar uma comunidade formal de aprendizagem.','Esther Ruiz Isart · Coca-Cola LATAM'] },
+  { k:'giraffas', n:'Giraffas', seg:'franquias', logo:'giraffas', type:'food', lbl:'30 dias', story:{text:'3 meses → 30 dias',cap:'no tempo de treinamento dos franqueados'},
+    about:'Maior rede de alimentação completa do Brasil, com mais de 400 lojas e cerca de 5.000 colaboradores.',
+    big:['30 dias','para treinar franqueados, antes 3 meses'],
+    des:'25 instrutores para treinar 400 lojas presencialmente num país continental. A plataforma anterior era só um repositório de PDFs.',
+    sol:'Criação de conteúdo na própria ferramenta, de forma simples e rápida. Foi o ponto decisivo na escolha.',
+    res:['De 3 cursos por ano para 3 cursos por mês','De 4 para até 8 alterações de cardápio por ano','Padronização da marca em todos os restaurantes'],
+    quote:['Com a Enabley conseguimos melhorar a comunicação com toda a nossa rede de franqueados.','Rosana Mendes · Gerente de Treinamentos'] },
+  { k:'cocamar', n:'Cocamar', seg:'agro', logo:'cocamar', type:'silo', lbl:'100%', story:{to:100,suf:'%',cap:'de alcance dos treinamentos, antes 60%'},
+    about:'Cooperativa agroindustrial de Maringá (PR), com mais de 19 mil famílias cooperadas e 115 unidades em cinco estados.',
+    big:['100%','de alcance dos treinamentos, saindo de 60% restrito a quem tinha e-mail corporativo'],
+    des:'O Portal Corporativo anterior não gerava indicadores automáticos e só alcançava quem tinha e-mail corporativo, deixando o time operacional de fora.',
+    sol:'Acesso via CPF em vez de e-mail corporativo, múltiplos instrutores e conteúdo em vídeo e PPT para toda a operação.',
+    res:['13.000 certificações emitidas em um semestre, com média de 92,79','Satisfação de 4,7 em 5 nas avaliações de reação','Acesso imediato à integração para novos colaboradores'] },
+  { k:'depyl', n:'Depyl Action', seg:'franquias', type:'shop', lbl:'1 curso/mês', story:{text:'3/ano → 1/mês',cap:'no ritmo de lançamento de cursos'},
+    about:'Franquia de cuidados com pelo e pele, mais de 25 anos de mercado e mais de 100 unidades no Brasil e na Venezuela.',
+    big:['1/mês','cursos lançados, antes 3 por ano'],
+    des:'Manter a excelência no atendimento em todas as franquias e capacitar a rede inteira a cada novo serviço.',
+    sol:'Conteúdos interativos, aulas ao vivo integradas, autonomia para os franqueados e produção de conteúdo sem depender de SCORM.',
+    res:['Redução de 50% no tempo de formação de uma depiladora','Aumento de 300% no número de usuários ativos','Aumento de 400% nas participações em aulas ao vivo'] },
+  { k:'dpaschoal', n:'DPaschoal', seg:'franquias', type:'garage', lbl:'28 mil', story:{to:28000,cap:'certificações emitidas em 2 anos'},
+    about:'Serviços automotivos desde 1949, maior rede de auto e truck-centers do Brasil. Opera a Maxxi Trainning Academy.',
+    big:['28.000','certificações emitidas em 2 anos de uso'],
+    des:'Treinar públicos diferentes pelo país (empresários, gestores, balconistas e reparadores) com autonomia para criar conteúdo.',
+    sol:'Colaboradores e clientes numa plataforma só, com subcontas para cada público.',
+    res:['Mais de 3.900 usuários ativos e 270 cursos criados','Redução de custo e de tempo na criação de conteúdos','Mais engajamento em todos os públicos da academia'] },
+  { k:'codimar', n:'Codimar', seg:'industria', type:'factory', lbl:'+52%', story:{to:52,pre:'+',suf:'%',cap:'na qualidade de fabricação'},
+    about:'Um dos maiores fabricantes de rolos e transportadores integrados da Espanha.',
+    big:['+52%','de qualidade de fabricação'],
+    des:'Erros de fabricação, prazos de entrega internacionais e custos trabalhistas altos, sem formação digital.',
+    sol:'Programa Lean Six Sigma na Enabley, presencial e EAD, com QR Codes no chão de fábrica e sessões ao vivo.',
+    res:['50% de redução no tempo de entrega ao cliente','35% de redução nos custos trabalhistas','90% de aumento no engajamento e na satisfação dos clientes'] },
+  { k:'omega', n:'Omega 2011', seg:'servicos', type:'tower', lbl:'1 mês', story:{text:'5 meses → 1 mês',cap:'no tempo de onboarding'},
+    about:'Serviços de segurança com mais de 30 anos e operação em mais de 10 países.',
+    big:['1 mês','de onboarding, antes 5 meses'],
+    des:'Equipe em cidades diferentes, alta rotatividade, sem computador pessoal nem internet no local de trabalho.',
+    sol:'Tablets comunitários em cada posto para atualizar procedimentos no tempo disponível.',
+    res:['Redução de 80% nos custos de treinamento','Aumento de 10% na retenção de novos colaboradores'] },
+  { k:'bohn', n:'Bohn', seg:'industria', type:'factory', lbl:'+100%', story:{to:100,pre:'+',suf:'%',cap:'pessoas certificadas num semestre, ante o ano anterior inteiro'},
+    about:'Líder na fabricação de equipamentos de refrigeração no México.',
+    big:['+100%','de pessoas certificadas em um semestre'],
+    des:'Treinamento presencial de distribuidores e clientes em vários pontos do México, interrompido pelo isolamento social.',
+    sol:'LXP da Enabley para alcançar várias equipes em locais diferentes ao mesmo tempo.',
+    res:['Grande economia nos custos com treinamentos','Mais localidades treinadas ao mesmo tempo'] },
+  { k:'msig', n:'MSIG Insurance', seg:'financeiro', type:'tower', lbl:'46 países', story:{to:46,suf:' países',cap:'atendidos a partir de uma base única de conteúdo'},
+    about:'Marca líder de seguros na Ásia, presente em 46 países e com mais de 40.000 funcionários.',
+    big:['46','países atendidos a partir de uma base única'],
+    des:'Treinamentos e atualizações de regulamento consumiam o tempo dos instrutores e interrompiam a agenda das pessoas.',
+    sol:'Funcionários e consultores independentes acessam atualizações de qualquer lugar, com avaliação interativa.',
+    res:['Conteúdo acessível sem sala de aula','Redução de custo e de tempo de treinamento','Mensagens padronizadas para distribuidores'] }
+];
+
+const TEAM = [
+  { k:'leonardo', n:'Leonardo Sisto', short:'Leonardo', role:'Diretor de Parcerias e Vendas', tag:'Sponsor executivo', when:'Decisões comerciais e relacionamento executivo da parceria', email:'leonardo.sisto@enabley.io', tel:'+55 11 99977-5880', look:{shirt:'#4B2BA8', skin:'#E8B48F', hair:'#3B2A20', style:'short'} },
+  { k:'gabriela', n:'Gabriela Cavalcanti', short:'Gabriela', role:'Account Executive', tag:'Ponto focal operacional', when:'Dia a dia do projeto, apresentações e reuniões técnicas', email:'gabriela.cavalcanti@enabley.io', tel:'+55 81 9941-1064', look:{shirt:'#A0208F', skin:'#C98E6A', hair:'#2A1A14', style:'long'} },
+  { k:'giuseppe', n:'Giuseppe Mosello', short:'Giuseppe', role:'VP de Customer Success', tag:'Liderança de entrega técnica', when:'Questões de entrega e do time técnico do projeto', email:'giuseppe.mosello@enabley.io', tel:'+55 11 95025-5050', look:{shirt:'#0066FF', skin:'#F1C6A3', hair:'#5A4636', style:'curly'} },
+  { k:'steffani', n:'Steffani Estevo', short:'Steffani', role:'Gerente de Customer Success', tag:'Customer Success', when:'Acompanhamento contínuo dos projetos já entregues', email:'Steffani.Estevo@enabley.io', look:{shirt:'#F2B841', skin:'#E3A882', hair:'#7A4A2A', style:'bun'} }
+];
+
+const PILLARS = [
+  { k:'learning', n:'Learning', sub:'Capacitação e trilhas', c:'#FF7A45', ang:155, story:{to:200,pre:'+',cap:'cursos prontos em português, em 15 categorias'},
+    lead:'Trilhas por cargo, jornadas, regras de progressão, matrícula automática, certificação e recertificação.',
+    feats:[['Fluxos e cursos','Fluxo é canal aberto para comunicado e campanha, com rastreio de visualização. Curso é trilha em sessões e módulos, com desbloqueio por nota.','Comunicado perdido em WhatsApp, e-mail e mural.'],
+      ['Construtor de conteúdo unificado','Junta PPT, PDF, vídeo, YouTube, Vimeo, sites e pacotes SCORM num único conteúdo interativo.','Processo fragmentado entre várias ferramentas de autoria.'],
+      ['Travas de avanço e assinatura eletrônica','Impede pular vídeo antes de assistir; a assinatura pede a senha e cria registro auditável.','Leitura passiva sem comprovação.'],
+      ['Certificações e recertificação','Certificado com requisito, recertificação automática e painel por equipe. O QR do certificado pode liberar área restrita.','Vencimento controlado em planilha.'],
+      ['Prova aleatória','Sorteia perguntas de um banco maior: cada pessoa recebe uma avaliação única.','Gabarito compartilhado entre colaboradores.'],
+      ['Catálogo de conteúdo pronto','Mais de 200 cursos em português, em 15 categorias, incluindo segurança e liderança.','Precisar começar rápido sem conteúdo próprio.'],
+      ['Gamificação e loja de recompensas','Pontos, rankings e loja de recompensas, com pontuação limitada a campanhas.','Engajamento voluntário baixo.'],
+      ['Eventos e treinamento híbrido','Calendário, inscrição, presença por QR code e avaliação, com Zoom e Teams.','Presencial controlado em planilha e papel.']] },
+  { k:'knowledge', n:'Knowledge', sub:'Gestão e distribuição', c:'#21B573', ang:215, story:{to:25,cap:'idiomas disponíveis na plataforma'},
+    lead:'Procedimentos, políticas e documentos organizados, pesquisáveis e acessíveis em segundos, inclusive por QR code no ponto de uso.',
+    feats:[['Artigos e base de conhecimento','Base pesquisável com mídia, avaliação de reação e histórico do que mudou e de quem viu a atualização.','Conhecimento espalhado em drives e wikis.'],
+      ['QR Codes no ponto de execução','QR junto ao equipamento, no estoque ou no PDV abre o conteúdo certo na hora e registra presença em treinamento.','Conhecimento longe do ponto de execução.'],
+      ['App white-label com modo offline','App com a marca do cliente, login sem e-mail corporativo, conteúdo baixado e progresso sincronizado depois.','Público deskless, sem e-mail e sem computador.'],
+      ['Acessibilidade','Ajuste de fonte e contraste e integração com Hand Talk e VLibras para Libras.','Política de diversidade, edital ou compliance.'],
+      ['Multi-idioma','25 idiomas, com o mesmo conteúdo base para públicos de países diferentes.','Mensagem que chega diferente em cada região.'],
+      ['Áreas de trabalho colaborativas','Rascunhos com versão e histórico; o validador externo recebe link seguro para um único conteúdo.','Homologação com fornecedor por e-mail.']] },
+  { k:'communication', n:'Communication', sub:'Comunicação interna', c:'#0066FF', ang:325, story:{text:'1 publicação',cap:'e a ponta certa recebe, por cargo, loja e turno'},
+    lead:'Comunicado, campanha e mudança de procedimento chegando ao público certo, com rastreio de quem recebeu e quem leu.',
+    flow:['A área publica uma única vez','a ponta certa recebe, por cargo, loja e turno','o gestor lê o resultado e vê quem ficou atrás'],
+    feats:[['Notificações e lembretes automáticos','Avisos na plataforma, por e-mail e push sobre atribuição, atualização e prazo, com lembretes antes e depois do vencimento.','T&D cobrando conclusão por e-mail e planilha.'],
+      ['Experiência dinâmica e catálogo','Feed de conteúdos curtos no formato de Reels, videoteca e catálogo com recomendação por perfil.','Plataforma aberta só quando cobram.'],
+      ['Perfis de acesso multinível','Aluno, instrutor, editor, gerente e administrador. O gestor local cuida da própria equipe sem passar pela TI.','Cadastro burocrático dependente da TI.'],
+      ['Cadastro e sincronização','Planilha, API com RH ou CRM, ou autocadastro com aprovação. Mudança de cargo atualiza as atribuições e preserva o histórico.','Onboarding lento e terceiros sem cadastro.'],
+      ['Estrutura multinível e multimarca','Matriz, regional, franqueado e unidade, com relatório consolidado e segregado por marca.','Matriz cobra e a ponta não enxerga.']] },
+  { k:'intelligence', n:'Intelligence', sub:'IA, dados e indicadores', c:'#A0208F', ang:25, story:{to:8,cap:'recursos de IA dentro da plataforma'},
+    lead:'IA que cria conteúdo, responde dúvida da operação e interpreta dados, mais indicadores de conclusão, nota e evolução por unidade.',
+    feats:[['Insights com IA','O gestor pergunta em linguagem natural e recebe resposta com link para o relatório e gráfico resumido.','Analista gastando horas montando relatório à mão.'],
+      ['Dashboard do gestor','Conclusão, nota e evolução por loja, regional, turno ou função, com certificações a vencer.','Gestor local sem visibilidade da própria equipe.'],
+      ['Relatórios gerenciais e analíticos','Relatório por grupo, análise por pergunta, matriz de habilidades e CSV com histórico por data.','Relatório impreciso e lacuna de competência invisível.'],
+      ['Auditoria e checklist de campo','Checklists de observação aplicados em campo para avaliar a execução prática.','Avaliação prática feita em papel.'],
+      ['Integrações e APIs','SAP SuccessFactors, Workday, Cornerstone, Active Directory, TOTVS, Salesforce e BI como Power BI.','Medo de redundância com o sistema de RH.']] }
+];
+
+const SIGNALS = ['LMS legado com lentidão, travamento sob carga ou relatório impreciso','Treinamento presencial descontinuado por corte de custo ou dificuldade logística','SAP SuccessFactors ou LMS corporativo em uso, mas sem chegar na linha de frente','Conteúdo espalhado em drive, wiki, PDF e WhatsApp, sem rastreio de leitura','Criação de conteúdo fragmentada entre várias ferramentas de autoria','Rede de franqueados, distribuidores, prestadores ou terceiros a capacitar','Abertura acelerada de unidades, alta rotatividade ou lançamento frequente de produto','Reestruturação recente com quadro reduzido','Auditoria, NR ou certificação obrigatória com exigência de evidência','Grande atualização de conteúdo a caminho: janela ideal para migrar antes','Meta de redução de perda operacional ou de tempo médio de atendimento'];
+
+/* =========================================================
+   LOGOS (recortados da lâmina de marcas)
+   ========================================================= */
+function loadImg(src){ return new Promise(res=>{ if(!src){ res(null); return; } const im = new Image(); im.onload = ()=>res(im); im.onerror = ()=>res(null); im.src = src; }); }
+const [IMG_CLI, IMG_VIVO, IMG_TEF] = await Promise.all([loadImg(ASSETS.clientes), loadImg(ASSETS.vivo), loadImg(ASSETS.tef)]);
+try{ await Promise.race([Promise.all([document.fonts.load('700 100px Fredoka'), document.fonts.load('600 100px Fredoka')]), sleep(1800)]); }catch(e){}
+
+function cropLogo(box){
+  if(!IMG_CLI) return null;
+  const s = IMG_CLI.naturalWidth/2000, pad = 3*s;
+  const sx = Math.max(0, box[0]*s-pad), sy = Math.max(0, box[1]*s-pad), w = Math.round((box[2]-box[0])*s+pad*2), h = Math.round((box[3]-box[1])*s+pad*2);
+  const c = document.createElement('canvas'); c.width = w; c.height = h; const x = c.getContext('2d', { willReadFrequently:true });
+  x.drawImage(IMG_CLI, sx, sy, w, h, 0, 0, w, h);
+  try{
+    const im = x.getImageData(0,0,w,h), d = im.data;
+    const bg = [d[0],d[1],d[2]];
+    let x0=w, y0=h, x1=0, y1=0;
+    for(let y=0;y<h;y++) for(let xx=0;xx<w;xx++){ const i=(y*w+xx)*4, r=d[i], g=d[i+1], b=d[i+2], mx=Math.max(r,g,b), mn=Math.min(r,g,b);
+      d[i] = Math.min(255, r*255/Math.max(200,bg[0])); d[i+1] = Math.min(255, g*255/Math.max(200,bg[1])); d[i+2] = Math.min(255, b*255/Math.max(200,bg[2]));
+      if(mx-mn > 26 || mx < 212){ if(xx<x0)x0=xx; if(xx>x1)x1=xx; if(y<y0)y0=y; if(y>y1)y1=y; } }
+    x.putImageData(im,0,0);
+    if(x1 > x0 && y1 > y0){ const t = document.createElement('canvas'); t.width = x1-x0+3; t.height = y1-y0+3; t.getContext('2d').drawImage(c, x0-1, y0-1, t.width, t.height, 0, 0, t.width, t.height); return t; }
+  }catch(e){}
+  return c;
+}
+function rr(x, X, Y, W, H, r){ x.beginPath(); x.moveTo(X+r,Y); x.arcTo(X+W,Y,X+W,Y+H,r); x.arcTo(X+W,Y+H,X,Y+H,r); x.arcTo(X,Y+H,X,Y,r); x.arcTo(X,Y,X+W,Y,r); x.closePath(); }
+function fitDraw(x, img, X, Y, W, H){ const iw = img.width||img.naturalWidth, ih = img.height||img.naturalHeight, k = Math.min(W/iw, H/ih); x.drawImage(img, X+(W-iw*k)/2, Y+(H-ih*k)/2, iw*k, ih*k); }
+function cardCanvas(logo, name, color){
+  const c = document.createElement('canvas'); c.width = 512; c.height = 256; const x = c.getContext('2d');
+  x.fillStyle = '#ffffff'; rr(x, 8, 8, 496, 240, 44); x.fill();
+  x.lineWidth = 10; x.strokeStyle = color; rr(x, 13, 13, 486, 230, 40); x.stroke();
+  if(logo) fitDraw(x, logo, 52, 44, 408, 168);
+  else { x.fillStyle = C.ink; x.textAlign = 'center'; x.textBaseline = 'middle'; let fs = 92; do{ x.font = '700 '+fs+'px Fredoka, "Trebuchet MS", sans-serif'; fs -= 4; } while(x.measureText(name).width > 420 && fs > 30); x.fillText(name, 256, 134); }
+  return c;
+}
+const LOGO = {};
+LOGOS.forEach(l=>{ LOGO[l[0]] = { k:l[0], n:l[1], seg:l[2], img:cropLogo(l.slice(3)) }; });
+Object.values(LOGO).forEach(l=>{ l.card = cardCanvas(l.img, l.n, SEGS[l.seg].c); try{ l.url = l.card.toDataURL('image/png'); }catch(e){ l.url = ''; } });
+const ENABLEY_LOGO = cropLogo(ENABLEY_BOX);
+if(ENABLEY_LOGO){ try{ $('#brand-logo').src = ENABLEY_LOGO.toDataURL('image/png'); $('#brand-logo').hidden = false; $('#brand-wm').hidden = true; }catch(e){} }
+
+/* =========================================================
+   THREE: base
+   ========================================================= */
+let renderer;
+try{ renderer = new THREE.WebGLRenderer({ antialias:true, alpha:true }); }
+catch(e){ const f = document.createElement('div'); f.id = 'fail'; f.textContent = 'Este navegador não conseguiu abrir o mundo 3D (WebGL indisponível).'; document.body.appendChild(f); return; }
+renderer.setPixelRatio(Math.min(window.devicePixelRatio||1, 2));
+renderer.setSize(innerWidth, innerHeight);
+renderer.outputEncoding = THREE.sRGBEncoding;
+renderer.toneMapping = THREE.ACESFilmicToneMapping; renderer.toneMappingExposure = 1.12;
+renderer.shadowMap.enabled = true; renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+$('#scene').appendChild(renderer.domElement);
+const MAXANI = Math.min(8, renderer.capabilities.getMaxAnisotropy());
+
+const scene = new THREE.Scene();
+const col = h => new THREE.Color(h).convertSRGBToLinear();
+scene.fog = new THREE.Fog(col('#D7ECFA'), 150, 320);
+const camera = new THREE.PerspectiveCamera(38, innerWidth/innerHeight, .1, 900);
+const controls = new THREE.OrbitControls(camera, renderer.domElement);
+Object.assign(controls, { enableDamping:true, dampingFactor:.08, enablePan:false, minDistance:9, maxDistance:170, maxPolarAngle:Math.PI*.6, rotateSpeed:.6, zoomSpeed:.85, autoRotateSpeed:.45 });
+
+/* luz de estúdio de animação: céu frio, chave quente, recorte azulado */
+(function(){
+  const pm = new THREE.PMREMGenerator(renderer), es = new THREE.Scene();
+  const g = new THREE.SphereGeometry(50, 32, 16), cols = [], p = g.attributes.position;
+  const top = col('#6FA4E8'), mid = col('#E4F2FC'), bot = col('#C9B08A'), c = new THREE.Color();
+  for(let i=0;i<p.count;i++){ const y = p.getY(i)/50; if(y>0) c.copy(mid).lerp(top, Math.pow(y,.7)); else c.copy(mid).lerp(bot, Math.min(1,-y*1.6)); cols.push(c.r,c.g,c.b); }
+  g.setAttribute('color', new THREE.Float32BufferAttribute(cols,3));
+  es.add(new THREE.Mesh(g, new THREE.MeshBasicMaterial({ vertexColors:true, side:THREE.BackSide })));
+  const sun = new THREE.Mesh(new THREE.PlaneGeometry(18,18), new THREE.MeshBasicMaterial({ color:new THREE.Color(7,6.4,5.4), side:THREE.DoubleSide }));
+  sun.position.set(28,36,22); sun.lookAt(0,0,0); es.add(sun);
+  scene.environment = pm.fromScene(es, .035).texture;
+})();
+scene.add(new THREE.HemisphereLight(col('#D6EBFF'), col('#9A7A55'), .5));
+const key = new THREE.DirectionalLight(col('#FFEBD0'), 1.75); key.position.set(34,62,30); key.castShadow = true;
+key.shadow.mapSize.set(2048,2048); Object.assign(key.shadow.camera, { left:-52, right:52, top:52, bottom:-52, near:10, far:180 }); key.shadow.bias = -.0005; key.shadow.normalBias = .035;
+scene.add(key);
+const rim = new THREE.DirectionalLight(col('#A9CBFF'), .7); rim.position.set(-45,22,-40); scene.add(rim);
+
+/* ---------- utilidades de geometria e material ---------- */
+const GC = {};
+function rbox(w,h,d,r,m){
+  m = m||3; const id = [w,h,d,r,m].join('|'); if(GC[id]) return GC[id];
+  r = Math.min(r, w/2-.001, h/2-.001, d/2-.001); const N = 2*m+1;
+  const g = new THREE.BoxGeometry(w,h,d,N,N,N), p = g.attributes.position, n = g.attributes.normal, uv = g.attributes.uv;
+  const remap = (v, L)=>{ const i = Math.round((v + L/2)/(L/N)); let o; if(i<=m) o = r*(i/m); else o = L - r*((N-i)/m); return o - L/2; };
+  const remapT = (t, L)=> (remap(t*L - L/2, L) + L/2)/L;
+  const per = (N+1)*(N+1), dims = [[d,h],[d,h],[w,d],[w,d],[w,h],[w,h]];
+  const v = new THREE.Vector3(), cc = new THREE.Vector3(), nn = new THREE.Vector3(), lim = new THREE.Vector3(w/2-r, h/2-r, d/2-r);
+  for(let i=0;i<p.count;i++){
+    v.set(remap(p.getX(i),w), remap(p.getY(i),h), remap(p.getZ(i),d));
+    cc.set(Math.max(-lim.x,Math.min(lim.x,v.x)), Math.max(-lim.y,Math.min(lim.y,v.y)), Math.max(-lim.z,Math.min(lim.z,v.z)));
+    nn.subVectors(v,cc); if(nn.lengthSq()<1e-9) nn.set(n.getX(i),n.getY(i),n.getZ(i)); nn.normalize();
+    v.copy(cc).addScaledVector(nn, r); p.setXYZ(i, v.x, v.y, v.z); n.setXYZ(i, nn.x, nn.y, nn.z);
+    const f = Math.floor(i/per), D = dims[f]; uv.setXY(i, remapT(uv.getX(i), D[0]), remapT(uv.getY(i), D[1]));
+  }
+  return (GC[id] = g);
+}
+const geo = {
+  sph: new THREE.SphereGeometry(1, 32, 24), sphLo: new THREE.SphereGeometry(1, 16, 12),
+  cyl: (rt,rb,h,s,open)=>{ const id='c'+[rt,rb,h,s,open].join('|'); return GC[id] || (GC[id] = new THREE.CylinderGeometry(rt,rb,h,s||24,1,!!open)); }
+};
+const MC = {};
+function toy(hex, o){ if(!o && MC[hex]) return MC[hex]; const m = new THREE.MeshPhysicalMaterial(Object.assign({ color:col(hex), roughness:.4, metalness:0, clearcoat:.55, clearcoatRoughness:.28, envMapIntensity:.85 }, o||{})); if(!o) MC[hex] = m; return m; }
+function matte(hex, o){ return new THREE.MeshStandardMaterial(Object.assign({ color:col(hex), roughness:.88, envMapIntensity:.55 }, o||{})); }
+function glow(hex, i){ return new THREE.MeshStandardMaterial({ color:col(hex), emissive:col(hex), emissiveIntensity:i==null?.9:i, roughness:.35 }); }
+function mesh(g, m, x, y, z, noShadow){ const o = new THREE.Mesh(g, m); o.position.set(x||0, y||0, z||0); o.castShadow = !noShadow; o.receiveShadow = true; return o; }
+function ball(r, m, x, y, z, sx, sy, sz){ const o = mesh(geo.sph, m, x, y, z); o.scale.set(r*(sx||1), r*(sy||1), r*(sz||1)); return o; }
+function rx(m, a){ m.rotation.x = a; return m; }
+function canvasTex(c){ const t = new THREE.CanvasTexture(c); t.encoding = THREE.sRGBEncoding; t.anisotropy = MAXANI; return t; }
+let seed = 11; const rnd = ()=>{ seed = (seed*16807) % 2147483647; return (seed-1)/2147483646; };
+const polar = (deg, r)=>({ x:Math.cos(deg*Math.PI/180)*r, z:Math.sin(deg*Math.PI/180)*r });
+
+/* ---------- registro, molas e entrada ---------- */
+const REG = {}, picks = [], roots = [], labels = [], anims = [];
+function jelly(root){ return root.userData.j || (root.userData.j = { s:1, v:0, t:1, w:0, wv:0, p:1, pv:0, pt:1, base:root.scale.clone(), rz:root.rotation.z }); }
+function reg(root, keyName){
+  root.traverse(o=>{ if(o.isMesh){ o.userData.key = keyName; picks.push(o); } });
+  (REG[keyName] = REG[keyName] || { roots:[] }).roots.push(root);
+  if(!root.userData.j){ jelly(root); roots.push(root); }
+}
+function bounce(root){ if(!root.userData.j){ jelly(root); roots.push(root); } return root.userData.j; }
+function poke(keyName, power){ const e = REG[keyName]; if(!e) return; e.roots.forEach(r=>{ const j = r.userData.j; j.v -= 7*(power||1); j.wv += (Math.random()<.5?-1:1)*2.6*(power||1); }); }
+const intros = [];
+function intro(root, delay, mode){ bounce(root); if(RM) return; const j = root.userData.j; if(mode==='pop'){ j.p = 0; j.pt = 0; intros.push({ root, delay, mode }); } else { root.visible = false; intros.push({ root, delay, mode:'drop', y0:root.position.y, vy:0, h:18 + rnd()*10 }); } }
+
+function label(keyName, obj, html, off, cls, color, opts){
+  const el = document.createElement('div'); el.className = 'lbl hide '+(cls||'');
+  const b = document.createElement('button'); b.type = 'button'; b.className = 'lb'; b.innerHTML = html; if(color) b.style.setProperty('--c', color);
+  b.addEventListener('click', e=>{ e.stopPropagation(); if(keyName) select(keyName); });
+  b.addEventListener('pointerenter', ()=>setHover(keyName)); b.addEventListener('pointerleave', ()=>setHover(null));
+  el.appendChild(b); $('#labels').appendChild(el);
+  const l = Object.assign({ key:keyName, obj, el, off, maxD:999, hoverOnly:false, shown:false }, opts||{}); labels.push(l); return l;
+}
+
+/* olhos de desenho animado que piscam */
+const blinkers = [];
+function eyes(parent, y, z, gap, r, o){
+  o = o||{}; const white = toy('#FFFFFF', { roughness:.25, clearcoat:.8 }), dark = toy('#1A1330', { roughness:.2, clearcoat:1 });
+  const pair = [-1,1].map(s=>{ const g = new THREE.Group(); g.position.set(s*gap, y, z); parent.add(g);
+    const w = ball(r, white, 0, 0, 0, o.sx||1, o.sy||1.12, .7); w.castShadow = false; g.add(w);
+    const p = ball(r*.55, dark, 0, -r*.05, r*.62, 1, 1.1, .6); p.castShadow = false; g.add(p);
+    const hl = ball(r*.17, glow('#FFFFFF', 1), r*.14, r*.2, r*.9); hl.castShadow = false; g.add(hl); return g; });
+  blinkers.push({ g:pair, next:1 + rnd()*4, t:-1 }); return pair;
+}
+
+/* personagem estilo animação 3D: cabeça grande, olhos grandes */
+function makeChar(o){
+  const g = new THREE.Group(), pants = toy(o.pants||'#2E2A4F'), skin = toy(o.skin, { roughness:.55, clearcoat:.15 }), hairM = toy(o.hair, { roughness:.6, clearcoat:.2 }), shirt = toy(o.shirt);
+  const legs = [-1,1].map(s=>{ const p = new THREE.Group(); p.position.set(s*.17,.68,0); g.add(p);
+    p.add(mesh(geo.cyl(.14,.15,.6,12), pants, 0,-.3,0)); p.add(ball(.13, toy('#1E1A33'), 0,-.62,.07, 1.15,.8,1.6)); return p; });
+  g.add(mesh(rbox(.8,.86,.54,.24), shirt, 0,1.08,0));
+  const arms = [-1,1].map(s=>{ const p = new THREE.Group(); p.position.set(s*.47,1.4,0); g.add(p);
+    const a = mesh(geo.cyl(.1,.09,.58,10), shirt, 0,-.28,0); p.add(a); p.add(ball(.12, skin, 0,-.6,0)); p.rotation.z = s*.12; return p; });
+  const head = new THREE.Group(); head.position.y = 1.98; g.add(head);
+  head.add(ball(.54, skin, 0,0,0, 1,.98,.96));
+  head.add(ball(.08, skin, 0,-.06,.53));
+  [-1,1].forEach(s=>head.add(ball(.12, skin, s*.54,-.02,0, .5,1,.8)));
+  const hs = o.style||'short';
+  const cap = mesh(new THREE.SphereGeometry(.575, 28, 16, 0, Math.PI*2, 0, Math.PI*.5), hairM, 0,.02,-.03); cap.rotation.x = -.32; head.add(cap);
+  if(hs==='long'){ head.add(mesh(rbox(1.1,1.0,.42,.2), hairM, 0,-.38,-.3)); }
+  if(hs==='bun'){ head.add(ball(.24, hairM, 0,.5,-.32)); }
+  if(hs==='curly'){ for(let i=0;i<9;i++){ const a = i/9*Math.PI*2; head.add(ball(.17, hairM, Math.cos(a)*.42, .34+Math.sin(i*1.7)*.05, Math.sin(a)*.36-.06)); } }
+  eyes(head, .07, .44, .19, .14);
+  [-1,1].forEach(s=>{ const br = mesh(rbox(.2,.05,.05,.02,1), hairM, s*.19,.3,.5); br.rotation.z = -s*.12; head.add(br); });
+  const mouth = mesh(new THREE.TorusGeometry(.1,.028,8,16,Math.PI), toy('#7A1F2B'), 0,-.2,.5); mouth.rotation.z = Math.PI; head.add(mouth);
+  if(o.phone){ const ph = mesh(rbox(.2,.32,.05,.04,1), toy('#1E1A33'), .02,-.66,.12); ph.rotation.x = -.6; arms[1].add(ph); const sc = mesh(new THREE.PlaneGeometry(.16,.26), glow('#7FE6FF',1.1), 0,0,.03, true); ph.add(sc); arms[1].rotation.x = -.9; }
+  g.userData.parts = { legs, arms, head };
+  return g;
+}
+
+/* =========================================================
+   O MUNDO
+   ========================================================= */
+const W = new THREE.Group(); scene.add(W);
+const IR = 40;
+
+/* ilha flutuante */
+(function(){
+  const grass = mesh(geo.cyl(IR, IR+.3, 1.6, 96), matte('#7CCB5A', { roughness:.95 }), 0,-.8,0); W.add(grass);
+  const dirt = mesh(geo.cyl(IR+.25, IR-.6, 1.8, 96), matte('#8C5E3C'), 0,-2.5,0); W.add(dirt);
+  const rock = mesh(new THREE.ConeGeometry(IR-.6, 30, 28, 5), matte('#B98A5E', { flatShading:true }), 0,-18.4,0); rock.rotation.x = Math.PI; W.add(rock);
+  const rp = rock.geometry.attributes.position; for(let i=0;i<rp.count;i++){ const y = rp.getY(i); if(y < 14.9 && y > -14.9){ rp.setX(i, rp.getX(i)*(1+(rnd()-.5)*.18)); rp.setZ(i, rp.getZ(i)*(1+(rnd()-.5)*.18)); } } rock.geometry.computeVertexNormals();
+  for(let i=0;i<9;i++){ const a = rnd()*Math.PI*2, r = 8+rnd()*22; W.add(mesh(new THREE.DodecahedronGeometry(1.5+rnd()*2.5,0), matte(['#A87A50','#C59A6A','#8F6542'][i%3], { flatShading:true }), Math.cos(a)*r, -6-rnd()*14, Math.sin(a)*r)); }
+  const lumpM = matte('#86D262', { roughness:.95 });
+  for(let i=0;i<54;i++){ const a = i/54*Math.PI*2 + rnd()*.05, r = IR - .2; const l = ball(1.15+rnd()*.5, lumpM, Math.cos(a)*r, -.55, Math.sin(a)*r, 1.4,.75,1.4); l.castShadow = false; W.add(l); }
+  const plaza = mesh(geo.cyl(14.5,14.5,.14,80), matte('#FFF0D6'), 0,.07,0); plaza.castShadow = false; W.add(plaza);
+  const ring = new THREE.Mesh(new THREE.RingGeometry(24.2, 26.8, 120), matte('#F6DFB3')); ring.rotation.x = -Math.PI/2; ring.position.y = .06; ring.receiveShadow = true; W.add(ring);
+  const ring2 = new THREE.Mesh(new THREE.RingGeometry(13.6, 14.5, 90), matte('#F2B841')); ring2.rotation.x = -Math.PI/2; ring2.position.y = .15; ring2.receiveShadow = true; W.add(ring2);
+  PILLARS.forEach(p=>{ const a = p.ang*Math.PI/180, m = mesh(new THREE.BoxGeometry(2.6,.1,10), matte('#F6DFB3'), Math.cos(a)*19.3, .05, Math.sin(a)*19.3); m.rotation.y = -a + Math.PI/2; m.castShadow = false; W.add(m); });
+  W.userData.ground = [grass, plaza, ring];
+})();
+
+/* ---------- blocos de brinquedo E N A B L E Y ---------- */
+const BLOCKS = [];
+(function(){
+  const L = ['E','N','A','B','L','E','Y'], BG = ['#4B2BA8','#A0208F','#F2B841','#0066FF','#FF7A45','#21B573','#7B3FE4'], SIDE = ['★','●','▲','♥','◆','★','●'];
+  function face(bg, txt, fg, size){ const c = document.createElement('canvas'); c.width = c.height = 256; const x = c.getContext('2d');
+    x.fillStyle = bg; x.fillRect(0,0,256,256); x.lineWidth = 12; x.strokeStyle = 'rgba(255,255,255,.4)'; rr(x, 24,24,208,208,38); x.stroke();
+    if(txt){ x.font = '700 '+size+'px Fredoka, "Trebuchet MS", sans-serif'; x.textAlign = 'center'; x.textBaseline = 'middle'; x.fillStyle = 'rgba(20,10,50,.22)'; x.fillText(txt,128,146); x.fillStyle = fg; x.fillText(txt,128,136); }
+    return canvasTex(c); }
+  const S = 3.4;
+  L.forEach((ch,i)=>{
+    const bg = BG[i], fg = bg==='#F2B841' ? '#2A1B5E' : '#FFFFFF', alt = BG[(i+3)%BG.length], altFg = alt==='#F2B841' ? '#2A1B5E' : '#FFFFFF';
+    const mk = t=>new THREE.MeshPhysicalMaterial({ map:t, roughness:.38, clearcoat:.6, clearcoatRoughness:.25, envMapIntensity:.8 });
+    const mats = [mk(face(alt, SIDE[i], altFg, 120)), mk(face(alt, SIDE[(i+2)%7], altFg, 120)), mk(face(bg, null)), mk(face(bg, null)), mk(face(bg, ch, fg, 180)), mk(face(bg, ch, fg, 180))];
+    const root = new THREE.Group(), x = (i-3)*3.85, z = 2.2 - Math.pow(i-3,2)*.32;
+    root.position.set(x, 0, z); root.rotation.y = -(i-3)*.07 + (rnd()-.5)*.14;
+    const b = mesh(rbox(S,S,S,.42,3), mats, 0, S/2, 0); root.add(b); W.add(root);
+    reg(root, 'plataforma'); intro(root, .35 + i*.13, 'drop'); BLOCKS.push({ root, top:new THREE.Vector3(x, S, z) });
+  });
+  label('plataforma', BLOCKS[3].root, 'Plataforma Enabley <small>4 pilares</small>', 6.6, 'big', C.purple);
+})();
+
+/* ---------- mascote: App Enabley que pula nos blocos ---------- */
+const mascot = (function(){
+  const root = new THREE.Group(); W.add(root);
+  const body = new THREE.Group(); root.add(body);
+  body.add(mesh(rbox(1.5,2.5,.62,.32,3), toy('#2A1B5E'), 0,1.62,0));
+  const c = document.createElement('canvas'); c.width = 256; c.height = 420; const x = c.getContext('2d');
+  const gr = x.createLinearGradient(0,0,0,420); gr.addColorStop(0,'#C23AB0'); gr.addColorStop(1,'#4B2BA8'); x.fillStyle = gr; rr(x,0,0,256,420,40); x.fill();
+  x.strokeStyle = '#fff'; x.lineWidth = 14; x.lineCap = 'round'; x.beginPath(); x.arc(128,232,44,.15*Math.PI,.85*Math.PI); x.stroke();
+  x.fillStyle = 'rgba(255,255,255,.9)'; x.font = '700 40px Fredoka, sans-serif'; x.textAlign = 'center'; x.fillText('enabley', 128, 372);
+  body.add(mesh(new THREE.PlaneGeometry(1.24,2.08), new THREE.MeshStandardMaterial({ map:canvasTex(c), emissive:col('#ffffff'), emissiveMap:canvasTex(c), emissiveIntensity:.35, roughness:.3 }), 0,1.62,.322, true));
+  eyes(body, 1.98, .36, .27, .17, { sx:1, sy:1.25 });
+  const legs = [-1,1].map(s=>{ const l = mesh(geo.cyl(.1,.1,.4,10), toy('#2A1B5E'), s*.38,.2,0); body.add(l); body.add(ball(.17, toy('#FFFFFF'), s*.38,.05,.08, 1.2,.7,1.5)); return l; });
+  const arms = [-1,1].map(s=>{ const p = new THREE.Group(); p.position.set(s*.78,1.7,0); body.add(p); p.add(mesh(geo.cyl(.07,.07,.6,8), toy('#2A1B5E'), 0,-.3,0)); p.add(ball(.16, toy('#FFFFFF'), 0,-.62,0)); p.rotation.z = s*.5; return p; });
+  root.position.set(-15.5, 0, 6); root.rotation.y = Math.PI/2;
+  reg(root, 'app'); intro(root, 1.6, 'pop');
+  label('app', root, '<i></i>App Enabley', 3.4, 'sm', C.magenta, { hoverOnly:true });
+  return { root, body, arms, q:[], phase:'idle', t:0, idx:-1, from:new THREE.Vector3(), to:new THREE.Vector3(), wait:3.2, dur:.5 };
+})();
+
+/* ---------- pilares ---------- */
+const flaps = [];
+function plinth(g, r, c){ g.add(mesh(geo.cyl(r, r+.3, .5, 48), matte('#FFE9C9'), 0,.25,0)); const ring = mesh(geo.cyl(r+.32, r+.32, .18, 48), toy(c), 0,.42,0); g.add(ring); }
+function placePillar(p, g){ const q = polar(p.ang, 19); g.position.set(q.x, 0, q.z); g.lookAt(q.x*3, 0, q.z*3); W.add(g); reg(g, p.k); intro(g, 1.1 + PILLARS.indexOf(p)*.18, 'drop'); }
+const PIL = {};
+PILLARS.forEach(p=>{
+  const g = new THREE.Group(), c = p.c;
+  if(p.k==='learning'){
+    plinth(g, 4.3, c);
+    g.add(mesh(rbox(6,3.8,4.6,.5,3), toy('#FFF4E2'), 0,2.4,0));
+    g.add(mesh(rbox(6.25,.55,4.85,.22,2), toy(c), 0,.82,0));
+    g.add(mesh(rbox(1.3,2.1,.3,.15,2), toy('#8B4A2B'), 0,1.55,2.33)); g.add(ball(.1, toy('#F2B841'), .4,1.5,2.5));
+    [-1.9,1.9].forEach(x=>{ g.add(mesh(rbox(1.25,1.25,.25,.14,2), toy('#FFFFFF'), x,2.85,2.3)); g.add(mesh(rbox(1,1,.28,.1,2), glow('#9FD8FF',.35), x,2.85,2.33)); });
+    g.add(mesh(geo.cyl(2.3,2.6,1.1,36), toy('#2A1B5E'), 0,4.85,0));
+    const board = mesh(rbox(6.6,.36,6.6,.14,2), toy('#2A1B5E'), 0,5.55,0); board.rotation.y = Math.PI/4; g.add(board);
+    g.add(ball(.32, toy(C.gold), 0,5.8,0));
+    const tas = new THREE.Group(); tas.position.set(0,5.75,4.6); g.add(tas);
+    tas.add(mesh(geo.cyl(.06,.06,1.7,8), toy(C.gold), 0,-.85,0)); tas.add(mesh(new THREE.ConeGeometry(.3,.8,12), toy(C.gold), 0,-1.9,0));
+    anims.push(t=>{ tas.rotation.x = Math.sin(t*2.1)*.22; tas.rotation.z = Math.sin(t*1.5)*.15; });
+  }
+  if(p.k==='knowledge'){
+    plinth(g, 4.3, c);
+    const books = [[5.6,1.2,4.2,'#21B573',.12],[5.0,1.0,3.8,'#0066FF',-.18],[5.4,1.3,4.0,'#F2B841',.28],[4.6,1.0,3.6,'#A0208F',-.06],[4.1,.95,3.2,'#FF7A45',.22]];
+    let y = .5; const pages = matte('#FFF8E6');
+    books.forEach(b=>{ const bk = new THREE.Group(); bk.position.y = y + b[1]/2; bk.rotation.y = b[4]; g.add(bk); const cm = toy(b[3]);
+      bk.add(mesh(rbox(b[0],.2,b[2],.08,1), cm, 0, b[1]/2-.1, 0)); bk.add(mesh(rbox(b[0],.2,b[2],.08,1), cm, 0, -b[1]/2+.1, 0));
+      bk.add(mesh(rbox(.32,b[1],b[2],.12,2), cm, -b[0]/2+.16, 0, 0)); bk.add(mesh(new THREE.BoxGeometry(b[0]-.4, b[1]-.36, b[2]-.22), pages, .12, 0, 0)); y += b[1]; });
+    const lupa = new THREE.Group(); lupa.position.set(0, y+1.9, 0); g.add(lupa);
+    lupa.add(mesh(new THREE.TorusGeometry(1.05,.2,14,40), toy('#2A1B5E'), 0,0,0));
+    lupa.add(mesh(new THREE.CircleGeometry(1.0,40), new THREE.MeshPhysicalMaterial({ color:col('#CFF3FF'), transparent:true, opacity:.45, roughness:.05, clearcoat:1 }), 0,0,0));
+    const h = mesh(geo.cyl(.16,.2,1.5,12), toy('#8B4A2B'), .95,-1.25,0); h.rotation.z = .75; lupa.add(h);
+    anims.push(t=>{ lupa.rotation.y = t*.7; lupa.position.y = y+1.9+Math.sin(t*1.6)*.3; });
+    /* totem QR */
+    const qt = new THREE.Group(); qt.position.set(3.4,0,2.2); g.add(qt);
+    qt.add(mesh(rbox(1,2.3,.4,.15,2), toy('#2A1B5E'), 0,1.15,0));
+    const cv = document.createElement('canvas'); cv.width = cv.height = 64; const x = cv.getContext('2d'); x.fillStyle = '#fff'; x.fillRect(0,0,64,64); x.fillStyle = '#111';
+    for(let i=0;i<8;i++) for(let j=0;j<8;j++) if(((i*7+j*13)%5)<2) x.fillRect(i*8,j*8,8,8);
+    [[0,0],[40,0],[0,40]].forEach(q=>{ x.fillStyle='#111'; x.fillRect(q[0],q[1],24,24); x.fillStyle='#fff'; x.fillRect(q[0]+4,q[1]+4,16,16); x.fillStyle='#111'; x.fillRect(q[0]+8,q[1]+8,8,8); });
+    const qtex = canvasTex(cv); qtex.magFilter = THREE.NearestFilter;
+    qt.add(mesh(new THREE.PlaneGeometry(.74,.74), new THREE.MeshBasicMaterial({ map:qtex, toneMapped:false }), 0,1.6,.21, true));
+    const beam = mesh(new THREE.PlaneGeometry(.84,.05), new THREE.MeshBasicMaterial({ color:col('#5EF0FF'), transparent:true, opacity:.9, toneMapped:false }), 0,1.6,.22, true); qt.add(beam);
+    anims.push(t=>{ beam.position.y = 1.6 + Math.sin(t*3)*.34; });
+  }
+  if(p.k==='communication'){
+    plinth(g, 3.4, c);
+    g.add(mesh(geo.cyl(1.15,1.75,9,28), toy('#FFFFFF'), 0,5,0));
+    [2.6,5,7.4].forEach(y=>{ const r = 1.75 - (y-.5)/9*.6 + .07; g.add(mesh(geo.cyl(r-.02,r+.02,.7,28), toy(c), 0,y,0)); });
+    g.add(mesh(geo.cyl(2.1,2.1,.4,32), toy(c), 0,9.6,0));
+    g.add(rx(mesh(new THREE.TorusGeometry(2,.08,8,40), toy('#FFFFFF'), 0,10.4,0), Math.PI/2));
+    const meg = new THREE.Group(); meg.position.set(0,10.9,0); g.add(meg);
+    const cone = mesh(new THREE.ConeGeometry(1.15,2.3,28,1,true), toy(C.gold, { side:THREE.DoubleSide }), 0,0,.9); cone.rotation.x = -Math.PI/2; meg.add(cone);
+    meg.add(rx(mesh(geo.cyl(.42,.42,.9,16), toy('#2A1B5E'), 0,0,-.55), Math.PI/2));
+    const waves = [0,1,2].map(i=>{ const w = mesh(new THREE.TorusGeometry(1.3,.08,8,40), new THREE.MeshBasicMaterial({ color:col('#FFFFFF'), transparent:true, toneMapped:false }), 0,0,2.2, true); meg.add(w); return w; });
+    const planes = [0,1,2,3].map(i=>{ const pl = new THREE.Group(); g.add(pl); const m = mesh(new THREE.ConeGeometry(.45,1.4,4), toy('#FFFFFF'), 0,0,0); m.scale.set(1,1,.22); m.rotation.x = Math.PI/2; pl.add(m); return pl; });
+    anims.push(t=>{ meg.rotation.y = Math.sin(t*.6)*.9;
+      waves.forEach((w,i)=>{ const u = (t*.7 + i/3) % 1; w.position.z = 2.1 + u*3; w.scale.setScalar(.6 + u*1.6); w.material.opacity = .9*(1-u); });
+      planes.forEach((pl,i)=>{ const a = t*.8 + i*Math.PI/2, r = 4.2 + Math.sin(t+i)*.5; pl.position.set(Math.cos(a)*r, 8 + i*.9 + Math.sin(t*2+i)*.4, Math.sin(a)*r); pl.rotation.set(0, -a, Math.sin(t*2+i)*.4); }); });
+    PIL.commTop = g;
+  }
+  if(p.k==='intelligence'){
+    plinth(g, 4.2, c);
+    g.add(mesh(geo.cyl(3.7,4,1.3,40), toy('#EDE4FB'), 0,1.05,0));
+    const core = mesh(new THREE.IcosahedronGeometry(1.15,1), glow(c,.9), 0,3.3,0); core.material.flatShading = true; g.add(core);
+    const orb = [0,1].map(i=>{ const o = mesh(new THREE.TorusGeometry(1.9+i*.5,.06,8,60), glow(i?'#5EF0FF':C.gold,1), 0,3.3,0, true); g.add(o); return o; });
+    const dome = mesh(new THREE.SphereGeometry(3.4,40,20,0,Math.PI*2,0,Math.PI/2), new THREE.MeshPhysicalMaterial({ color:col('#E9DBFF'), transparent:true, opacity:.32, roughness:.04, clearcoat:1, depthWrite:false }), 0,1.7,0, true); g.add(dome);
+    g.add(rx(mesh(new THREE.TorusGeometry(3.42,.16,10,60), toy(c), 0,1.72,0), Math.PI/2));
+    anims.push(t=>{ core.rotation.y = t*.8; core.rotation.x = Math.sin(t*.6)*.4; orb[0].rotation.set(Math.PI/2 + Math.sin(t)*.4, t*.9, 0); orb[1].rotation.set(Math.sin(t*.8)*.6, 0, t*.7); });
+  }
+  placePillar(p, g); PIL[p.k] = g;
+  label(p.k, g, p.n+' <small>'+p.sub+'</small>', p.k==='communication'?13.2:(p.k==='knowledge'?9.6:(p.k==='learning'?7.6:6.6)), 'big', c);
+});
+
+/* ---------- AI Companion: robô flutuante ---------- */
+const bot = (function(){
+  const root = new THREE.Group(), q = polar(25, 19); root.position.set(q.x, 7.2, q.z); W.add(root);
+  const body = new THREE.Group(); root.add(body);
+  body.add(ball(1.15, toy('#FFFFFF', { roughness:.18, clearcoat:1 }), 0,0,0, 1,1.08,1));
+  body.add(ball(.9, toy('#1B1340', { roughness:.12, clearcoat:1 }), 0,.12,.5, 1,.72,.6));
+  const eye = toy('#5EF0FF'); const em = glow('#5EF0FF', 1.6);
+  const es = [-1,1].map(s=>{ const e = ball(.17, em, s*.3,.16,1.02, 1,1.35,.5); e.castShadow = false; e.userData.sy = e.scale.y; body.add(e); return e; });
+  body.add(mesh(geo.cyl(.05,.05,.6,8), toy('#C9C2DD'), 0,1.4,0)); body.add(ball(.18, glow(C.magenta,1.2), 0,1.75,0));
+  const hands = [-1,1].map(s=>{ const h = ball(.3, toy('#FFFFFF', { roughness:.2, clearcoat:1 }), s*1.45,-.25,.2); root.add(h); return h; });
+  reg(root, 'ia'); intro(root, 2.1, 'pop');
+  blinkers.push({ g:es, next:2, t:-1, sy:1.35 });
+  label('ia', root, '<i></i>AI Companion', 2.6, '', '#7B3FE4');
+  return { root, body, hands };
+})();
+
+/* ---------- cases: pavilhões com logo ---------- */
+const CASEOBJ = {};
+function signBoard(g, card, y, z, w){ w = w||3.6; const s = new THREE.Group(); s.position.set(0,y,z); g.add(s);
+  [-1,1].forEach(k=>s.add(mesh(geo.cyl(.08,.08,1.2,8), toy('#2A1B5E'), k*w*.35,-.7,0)));
+  s.add(mesh(rbox(w+.2,w/2+.2,.22,.12,2), toy('#FFFFFF'), 0,.3,0));
+  s.add(mesh(new THREE.PlaneGeometry(w, w/2), new THREE.MeshBasicMaterial({ map:canvasTex(card), transparent:true, toneMapped:false }), 0,.3,.12, true)); return s; }
+const smokes = [];
+CASES.forEach((cs,i)=>{
+  const seg = SEGS[cs.seg], c = seg.c, g = new THREE.Group(), q = polar(100 + i*360/CASES.length, 31.5);
+  g.position.set(q.x, 0, q.z); g.lookAt(q.x*3, 0, q.z*3); W.add(g);
+  g.add(mesh(geo.cyl(3.3,3.5,.4,40), matte('#FFE9C9'), 0,.2,0));
+  const card = cs.logo && LOGO[cs.logo] ? LOGO[cs.logo].card : cardCanvas(null, cs.n, c);
+  let top = 3;
+  if(cs.type==='shop' || cs.type==='garage'){
+    g.add(mesh(rbox(4,2.7,3.2,.32,2), toy('#FFF6EA'), 0,1.75,0)); g.add(mesh(rbox(4.25,.42,3.45,.16,2), toy(c), 0,3.2,0));
+    if(cs.type==='shop'){ for(let k=0;k<5;k++){ const s = mesh(rbox(.82,.12,1.3,.05,1), toy(k%2?'#FFFFFF':c), -1.64+k*.82,2.62,1.9); s.rotation.x = .42; g.add(s); }
+      g.add(mesh(rbox(2.6,1.2,.12,.08,1), glow('#BFE6FF',.3), 0,1.55,1.62)); }
+    else { g.add(mesh(rbox(2.6,1.9,.12,.08,1), toy('#5B6B8C'), 0,1.35,1.62)); for(let k=0;k<3;k++) g.add(rx(mesh(new THREE.TorusGeometry(.42,.2,10,20), toy('#2A2A33'), 2.4,.62+k*.38,1.4), Math.PI/2)); }
+    top = 3.4;
+  }
+  if(cs.type==='factory'){
+    g.add(mesh(rbox(4.4,2.4,3.2,.3,2), toy('#EEF1F6'), 0,1.6,0));
+    for(let k=-1;k<=1;k++){ const pr = mesh(geo.cyl(.78,.78,3.1,3), toy(c), k*1.36,3.05,0); pr.rotation.x = Math.PI/2; pr.rotation.y = 0; g.add(pr); }
+    g.add(mesh(geo.cyl(.32,.42,3.8,14), toy('#B5654A'), 1.5,3.4,-1.1));
+    g.add(mesh(rbox(2.6,.8,.12,.08,1), glow('#BFE6FF',.3), -.4,1.5,1.62));
+    for(let k=0;k<3;k++){ const s = ball(.45, matte('#FFFFFF', { transparent:true, opacity:.7 }), 1.5,5.4,-1.1); s.castShadow = false; g.add(s); smokes.push({ m:s, off:k/3 }); }
+    top = 3.9;
+  }
+  if(cs.type==='silo'){
+    g.add(mesh(rbox(3,2.4,3,.3,2), toy('#D9573F'), -.8,1.6,0));
+    const roof = mesh(geo.cyl(2.2,2.2,3.1,3), toy('#FFFFFF'), -.8,3.2,0); roof.rotation.z = Math.PI/2; roof.rotation.y = Math.PI/2; roof.scale.set(1,1,.6); g.add(roof);
+    g.add(mesh(geo.cyl(1.05,1.05,4.6,24), toy('#C9D3DC', { metalness:.3, roughness:.3 }), 1.6,2.7,-.2)); g.add(ball(1.05, toy(c), 1.6,5,-.2, 1,.6,1));
+    top = 3.6;
+  }
+  if(cs.type==='food'){
+    g.add(mesh(geo.cyl(1.9,1.9,2.2,28), toy('#FFF6EA'), 0,1.5,0));
+    g.add(mesh(geo.cyl(1.95,1.95,.8,28,true), glow('#BFE6FF',.25), 0,1.7,0));
+    g.add(mesh(new THREE.ConeGeometry(2.8,1.5,28), toy(c), 0,3.35,0)); g.add(ball(.3, toy(C.gold), 0,4.2,0));
+    [[-2.9,1.6],[2.7,1.9]].forEach(u=>{ g.add(mesh(geo.cyl(.05,.05,1.6,6), toy('#6B5B53'), u[0],1.1,u[1])); g.add(mesh(new THREE.ConeGeometry(.95,.42,12), toy(k2(u[0])), u[0],2,u[1])); g.add(mesh(geo.cyl(.5,.5,.08,14), toy('#6B5B53'), u[0],.95,u[1])); });
+    top = 4.2;
+  }
+  if(cs.type==='tower'){
+    g.add(mesh(rbox(2.9,6,2.9,.35,2), toy('#DDEBFA', { roughness:.15, clearcoat:1 }), 0,3.3,0));
+    for(let k=0;k<4;k++) g.add(mesh(rbox(2.95,.22,2.95,.08,1), toy(c), 0,1.4+k*1.35,0));
+    g.add(mesh(rbox(3.1,.4,3.1,.15,1), toy(c), 0,6.4,0));
+    top = 6.6;
+  }
+  signBoard(g, card, top+1.6, .2);
+  reg(g, 'case_'+cs.k); intro(g, 1.7 + i*.1, 'drop');
+  CASEOBJ[cs.k] = g;
+  label('case_'+cs.k, g, '<b>'+cs.lbl+'</b>'+cs.n, top+4.2, 'case sm', c, { maxD:82 });
+});
+function k2(x){ return x<0 ? '#FFFFFF' : C.gold; }
+
+/* ---------- time Enabley: quiosque e personagens ---------- */
+const people = [];
+(function(){
+  const g = new THREE.Group(); g.position.set(-7.5,0,11.2); g.rotation.y = .25; W.add(g);
+  g.add(mesh(rbox(3.6,2.3,2,.25,2), toy('#FFFFFF'), 0,1.15,-1.6));
+  for(let k=0;k<6;k++){ const s = mesh(rbox(.62,.12,1.2,.05,1), toy(k%2?'#FFFFFF':C.purple), -1.55+k*.62,2.55,-.5); s.rotation.x = .35; g.add(s); }
+  [-1.7,1.7].forEach(x=>g.add(mesh(geo.cyl(.07,.07,2.6,8), toy('#2A1B5E'), x,1.3,-.1)));
+  const c = document.createElement('canvas'); c.width = 512; c.height = 128; const x = c.getContext('2d');
+  x.fillStyle = C.purple; rr(x,0,0,512,128,40); x.fill(); x.fillStyle = '#fff'; x.font = '700 64px Fredoka, sans-serif'; x.textAlign = 'center'; x.textBaseline = 'middle'; x.fillText('Time Enabley', 256, 68);
+  g.add(mesh(new THREE.PlaneGeometry(3.4,.85), new THREE.MeshBasicMaterial({ map:canvasTex(c), transparent:true, toneMapped:false }), 0,3.25,-.55, true));
+  reg(g, 'time'); intro(g, 2.2, 'drop');
+  label('time', g, '<i></i>Time Enabley', 4.2, '', C.purple);
+  TEAM.forEach((t,i)=>{
+    const ch = makeChar(t.look); ch.position.set(-9.8 + i*1.65, 0, 13.6 - i*.25); ch.rotation.y = .1 + (i-1.5)*.08; W.add(ch);
+    reg(ch, 'p_'+t.k); intro(ch, 2.4 + i*.12, 'drop'); people.push({ g:ch, k:'p_'+t.k, ph:i*1.3 });
+    label('p_'+t.k, ch, t.short, 2.95 + (i%2)*.75, 'person sm', t.look.shirt, { maxD:48 });
+  });
+})();
+
+/* ---------- caso de negócio: cofrinho que recebe moedas ---------- */
+const piggy = (function(){
+  const g = new THREE.Group(); g.position.set(0,0,-11.5); W.add(g);
+  const pink = toy('#FF8DB3'), dk = toy('#E0628E');
+  g.add(ball(2.2, pink, 0,2.6,0, 1.25,1,1));
+  const sn = mesh(geo.cyl(.85,.92,.7,24), pink, 0,2.45,2.5); sn.rotation.x = Math.PI/2; g.add(sn);
+  [-1,1].forEach(s=>{ g.add(ball(.16, dk, s*.3,2.45,2.87, 1,1.3,.5)); const e = mesh(new THREE.ConeGeometry(.55,.9,16), pink, s*1.05,4.45,.9); e.rotation.set(-.3,0,-s*.35); g.add(e); });
+  [[-1.4,-1],[1.4,-1],[-1.4,1],[1.4,1]].forEach(u=>g.add(mesh(geo.cyl(.5,.55,1.2,16), pink, u[0],.6,u[1])));
+  g.add(mesh(new THREE.TorusGeometry(.32,.09,8,20), pink, 0,3,-2.75));
+  g.add(mesh(rbox(1.3,.12,.32,.05,1), toy('#5A1F3A'), 0,4.78,0));
+  eyes(g, 3.3, 2.0, .78, .26);
+  reg(g, 'negocio'); intro(g, 1.5, 'drop');
+  label('negocio', g, '<i></i>Caso de negócio', 5.6, '', '#FF5C93');
+  const coins = [0,1,2].map(i=>{ const m = mesh(geo.cyl(.55,.55,.14,26), toy(C.gold, { metalness:.6, roughness:.25 }), 0,-50,0); m.rotation.x = Math.PI/2; W.add(m); return { m, t:-i*1.1 - 3 }; });
+  return { g, coins };
+})();
+
+/* ---------- placa "Quando oferecer" ---------- */
+(function(){
+  const g = new THREE.Group(); g.position.set(8.5,0,12.4); g.rotation.y = -.3; W.add(g);
+  g.add(mesh(geo.cyl(.2,.26,5.2,12), toy('#9A6A45'), 0,2.6,0));
+  [[4.3,C.gold,.3],[3.4,'#FF7A45',-.5],[2.5,'#21B573',.9]].forEach((a,i)=>{ const p = new THREE.Group(); p.position.y = a[0]; p.rotation.y = a[2]; g.add(p);
+    p.add(mesh(rbox(2.6,.7,.2,.12,2), toy(a[1]), 1.15,0,0)); const tip = mesh(new THREE.ConeGeometry(.5,.6,3), toy(a[1]), 2.7,0,0); tip.rotation.z = -Math.PI/2; tip.scale.z = .4; p.add(tip);
+    anims.push(t=>{ p.rotation.y = a[2] + Math.sin(t*1.3+i)*.06; }); });
+  g.add(ball(.3, toy(C.gold), 0,5.3,0));
+  reg(g, 'oferecer'); intro(g, 2, 'drop');
+  label('oferecer', g, '<i></i>Quando oferecer', 6.3, '', '#E3A21A');
+})();
+
+/* ---------- balões com as marcas ---------- */
+const balloons = [];
+(function(){
+  const list = Object.values(LOGO);
+  list.forEach((l,i)=>{
+    const seg = SEGS[l.seg], g = new THREE.Group(); W.add(g);
+    const env = ball(1.45, toy(seg.c, { roughness:.22, clearcoat:1, transparent:true }), 0,3.2,0, 1,1.18,1); g.add(env);
+    g.add(ball(.42, toy('#FFFFFF', { roughness:.1, clearcoat:1 }), -.55,3.95,.9, .6,.9,.4));
+    const knot = mesh(new THREE.ConeGeometry(.22,.35,10), toy(seg.c), 0,1.42,0); knot.rotation.x = Math.PI; g.add(knot);
+    g.add(mesh(geo.cyl(.025,.025,1.5,4), toy('#FFFFFF'), 0,.6,0, true));
+    const card = mesh(new THREE.PlaneGeometry(3.4,1.7), new THREE.MeshBasicMaterial({ map:canvasTex(l.card), transparent:true, side:THREE.DoubleSide, toneMapped:false }), 0,-.95,0, true); g.add(card);
+    const b = { g, env, card, a:i/list.length*Math.PI*2, r:57 + (i%3)*3.2, h:4 + ((i*7)%5)*2.8, ph:rnd()*6, k:'cli_'+l.k };
+    balloons.push(b); reg(g, b.k); intro(g, 2.6 + i*.03, 'pop');
+    label(b.k, g, '<i></i>'+l.n, 5.6, 'sm', seg.c, { hoverOnly:true });
+  });
+})();
+
+/* ---------- balão de ar quente: escala ---------- */
+const hot = (function(){
+  const g = new THREE.Group(); g.position.set(-4,24,-18); W.add(g);
+  const pts = [[.9,0],[1.7,.8],[2.8,2.2],[3.5,3.8],[3.6,5.3],[3.1,6.6],[2.0,7.5],[.01,7.9]].map(p=>new THREE.Vector2(p[0],p[1]));
+  const cols = [C.purple, C.gold, C.magenta, '#FFFFFF'];
+  for(let i=0;i<8;i++) g.add(mesh(new THREE.LatheGeometry(pts, 6, i*Math.PI/4, Math.PI/4), toy(cols[i%4], { side:THREE.DoubleSide }), 0,0,0));
+  g.add(mesh(rbox(1.7,1.1,1.7,.18,2), toy('#A0703F'), 0,-2.5,0));
+  [[-1,-1],[1,-1],[-1,1],[1,1]].forEach(u=>{ const r = mesh(geo.cyl(.03,.03,2.2,4), toy('#6B5B53'), u[0]*.75,-1,u[1]*.75, true); g.add(r); });
+  const fl = mesh(new THREE.ConeGeometry(.3,.9,12), glow('#FF9A3C',2), 0,-.6,0, true); g.add(fl);
+  const c = document.createElement('canvas'); c.width = 1024; c.height = 256; const x = c.getContext('2d');
+  x.fillStyle = '#fff'; rr(x,8,8,1008,240,60); x.fill(); x.lineWidth = 12; x.strokeStyle = C.gold; rr(x,14,14,996,228,56); x.stroke();
+  if(ENABLEY_LOGO) fitDraw(x, ENABLEY_LOGO, 50, 50, 300, 156);
+  x.fillStyle = C.ink; x.font = '700 84px Fredoka, sans-serif'; x.textBaseline = 'middle'; x.fillText('+1 milhão', 380, 104); x.font = '600 46px Fredoka, sans-serif'; x.fillStyle = C.purple; x.fillText('de usuários ativos', 382, 178);
+  const ban = new THREE.Group(); ban.position.y = -4.2; g.add(ban);
+  ban.add(mesh(new THREE.PlaneGeometry(6.4,1.6), new THREE.MeshBasicMaterial({ map:canvasTex(c), transparent:true, side:THREE.DoubleSide, toneMapped:false }), 0,0,0, true));
+  reg(g, 'escala'); intro(g, 2.8, 'pop');
+  label('escala', g, '<i></i>Escala e credenciais', 9.2, '', C.gold);
+  return { g, fl, ban };
+})();
+
+/* ---------- dirigível da parceria ---------- */
+const blimp = (function(){
+  const g = new THREE.Group(); W.add(g);
+  g.add(ball(2, toy('#F6F3FC', { roughness:.25, clearcoat:.9 }), 0,0,0, 2.6,.88,.88));
+  [[0,1],[0,-1],[1,0],[-1,0]].forEach(u=>{ const f = mesh(rbox(1.9,.12,1.4,.05,1), toy(C.purple), -4.7, u[1]*1.05, u[0]*1.05); if(u[0]) f.rotation.x = Math.PI/2; g.add(f); });
+  g.add(mesh(rbox(2,.7,.9,.25,2), toy(C.purple), 0,-2,0));
+  const prop = new THREE.Group(); prop.position.set(-5.5,0,0); g.add(prop);
+  prop.add(mesh(rbox(.12,1.5,.25,.05,1), toy('#2A1B5E'), 0,0,0)); prop.add(mesh(rbox(.12,.25,1.5,.05,1), toy('#2A1B5E'), 0,0,0));
+  const c = document.createElement('canvas'); c.width = 1024; c.height = 256; const x = c.getContext('2d');
+  x.fillStyle = '#fff'; rr(x,6,6,1012,244,70); x.fill();
+  if(IMG_VIVO) fitDraw(x, IMG_VIVO, 70, 34, 300, 188);
+  x.fillStyle = C.purple; x.font = '700 90px Fredoka, sans-serif'; x.textAlign = 'center'; x.textBaseline = 'middle'; x.fillText('+', 420, 132);
+  if(IMG_TEF) fitDraw(x, IMG_TEF, 480, 70, 480, 116);
+  const t = canvasTex(c), bm = new THREE.MeshBasicMaterial({ map:t, transparent:true, toneMapped:false });
+  const s1 = mesh(new THREE.PlaneGeometry(5.6,1.4), bm, .2,0,1.78, true); g.add(s1);
+  const s2 = mesh(new THREE.PlaneGeometry(5.6,1.4), bm, .2,0,-1.78, true); s2.rotation.y = Math.PI; g.add(s2);
+  reg(g, 'parceria'); intro(g, 3, 'pop');
+  label('parceria', g, '<i></i>Parceria Vivo Empresas + Telefónica Tech', 3.2, 'sm', '#660099');
+  return { g, prop, a:2.1 };
+})();
+
+/* ---------- árvores, nuvens ---------- */
+const sway = [];
+(function(){
+  const occ = [[0,2,13],[0,-11.5,5],[-7.5,11.5,6],[8.5,12.4,3.5]];
+  PILLARS.forEach(p=>{ const q = polar(p.ang,19); occ.push([q.x,q.z,6]); });
+  CASES.forEach((c,i)=>{ const q = polar(100+i*360/CASES.length, 31.5); occ.push([q.x,q.z,4.8]); });
+  const greens = ['#4FB548','#6CC653','#3FA34D','#82D160'], trunk = toy('#9A6A45');
+  let n = 0, tries = 0;
+  while(n < 38 && tries < 900){ tries++;
+    const a = rnd()*Math.PI*2, r = n < 26 ? 34 + rnd()*4.5 : 15.5 + rnd()*7.5, x = Math.cos(a)*r, z = Math.sin(a)*r;
+    if((r > 24 && r < 27.5)) continue;
+    if(occ.some(o=>Math.hypot(o[0]-x, o[1]-z) < o[2] + 1.6)) continue;
+    occ.push([x,z,1.8]); n++;
+    const g = new THREE.Group(); g.position.set(x,0,z); W.add(g); const s = .8 + rnd()*.6; g.scale.setScalar(s);
+    g.add(mesh(geo.cyl(.22,.32,1.8,10), trunk, 0,.9,0));
+    const gm = toy(greens[n%4], { roughness:.6, clearcoat:.15 });
+    g.add(ball(1.35, gm, 0,2.6,0)); if(rnd()<.6) g.add(ball(.95, gm, .7,3.3,.2)); if(rnd()<.5) g.add(ball(.8, gm, -.6,3.1,-.4));
+    if(rnd()<.35) for(let k=0;k<3;k++) g.add(ball(.14, toy('#FF5C93'), Math.cos(k*2.1)*1.2, 2.7+Math.sin(k)*.4, Math.sin(k*2.1)*1.2));
+    bounce(g); intro(g, .9 + rnd()*1.8, 'pop'); sway.push({ g, ph:rnd()*6 });
+  }
+  const flowerC = ['#FF5C93','#F2B841','#FFFFFF','#A0208F'];
+  for(let i=0;i<60;i++){ const a = rnd()*Math.PI*2, r = 15 + rnd()*24; if(r>23.8 && r<27.2) continue; const x = Math.cos(a)*r, z = Math.sin(a)*r; if(occ.some(o=>Math.hypot(o[0]-x,o[1]-z) < o[2])) continue;
+    const f = ball(.18, toy(flowerC[i%4]), x,.25,z); f.castShadow = false; W.add(f); }
+})();
+const clouds = [];
+(function(){
+  const m = new THREE.MeshStandardMaterial({ color:col('#FFFFFF'), roughness:1, emissive:col('#DCEBFF'), emissiveIntensity:.35 });
+  for(let i=0;i<16;i++){ const g = new THREE.Group(), a = rnd()*Math.PI*2, r = 75 + rnd()*55, y = -32 + rnd()*62;
+    g.position.set(Math.cos(a)*r, y, Math.sin(a)*r); const s = 2 + rnd()*2.6;
+    for(let k=0;k<5;k++){ const b = new THREE.Mesh(geo.sphLo, m); b.scale.setScalar(s*(.7+rnd()*.6)); b.position.set((k-2)*s*1.1, rnd()*s*.5, (rnd()-.5)*s); g.add(b); }
+    scene.add(g); clouds.push({ g, a, r, y, sp:(.004 + rnd()*.006) }); }
+})();
+
+/* ---------- linha de frente caminhando ---------- */
+const walkers = [];
+(function(){
+  const looks = [['#FF7A45','#C98E6A','#2A1A14','short'],['#21B573','#F1C6A3','#7A4A2A','bun'],['#0066FF','#E3A882','#3B2A20','curly'],['#F2B841','#B97A57','#1E1410','long'],['#A0208F','#E8B48F','#5A4636','short'],['#7B3FE4','#F1C6A3','#2A1A14','bun'],['#14A88F','#C98E6A','#3B2A20','short'],['#E5484D','#E8B48F','#7A4A2A','curly']];
+  looks.forEach((l,i)=>{ const ch = makeChar({ shirt:l[0], skin:l[1], hair:l[2], style:l[3], phone:true }); ch.scale.setScalar(.92); W.add(ch);
+    const w = { g:ch, a:i/looks.length*Math.PI*2 + rnd()*.3, r:25.5 + (i%2? .55 : -.55), sp:(.07 + rnd()*.035)*(i%2?1:-1), ph:rnd()*6, hop:0 };
+    walkers.push(w); reg(ch, 'frontline'); intro(ch, 2.9 + i*.08, 'pop'); });
+  label('frontline', walkers[0].g, '<i></i>Linha de frente', 3, 'sm', '#FF7A45', { maxD:60 });
+})();
+
+/* ---------- envelopes voando da torre de comunicação ---------- */
+const packets = [];
+(function(){
+  const env = toy('#FFFFFF'), flap = toy(C.magenta);
+  for(let i=0;i<7;i++){ const g = new THREE.Group(); g.add(mesh(rbox(.9,.6,.12,.06,1), env, 0,0,0)); const f = mesh(new THREE.ConeGeometry(.42,.32,3), flap, 0,.12,.07); f.rotation.set(0,0,Math.PI); f.scale.z = .2; g.add(f);
+    W.add(g); g.visible = false; packets.push({ g, t:-i*.55 - 3, curve:null, target:null }); }
+})();
+function launchPacket(p){
+  const from = new THREE.Vector3(); PIL.commTop.localToWorld(from.set(0,11.2,1.6));
+  const keys = Object.keys(CASEOBJ), tk = keys[Math.floor(Math.random()*keys.length)], tg = CASEOBJ[tk];
+  const to = tg.position.clone(); to.y = 5;
+  const mid = from.clone().add(to).multiplyScalar(.5); mid.y += 10;
+  p.curve = new THREE.QuadraticBezierCurve3(from, mid, to); p.target = 'case_'+tk; p.t = 0; p.g.visible = true;
+}
+
+/* ---------- confete e ondas de clique ---------- */
+const confetti = [];
+(function(){ const cs = [C.purple,C.magenta,C.gold,C.blue,'#FF7A45','#21B573','#FFFFFF'];
+  for(let i=0;i<90;i++){ const m = mesh(rbox(.26,.26,.07,.03,1), toy(cs[i%cs.length]), 0,-99,0, true); m.visible = false; scene.add(m); confetti.push({ m, life:0, v:new THREE.Vector3(), s:new THREE.Vector3() }); } })();
+function burst(p, n){ if(RM) return; let k = 0; for(const c of confetti){ if(c.life > 0) continue; c.life = 1.3 + Math.random()*.6; c.m.visible = true; c.m.position.copy(p);
+  c.v.set((Math.random()-.5)*9, 6 + Math.random()*7, (Math.random()-.5)*9); c.s.set(Math.random()*9, Math.random()*9, Math.random()*9); if(++k >= (n||28)) break; } }
+const ripple = mesh(new THREE.RingGeometry(.8,1.1,48), new THREE.MeshBasicMaterial({ color:col('#FFFFFF'), transparent:true, opacity:0, toneMapped:false }), 0,.2,0, true);
+ripple.rotation.x = -Math.PI/2; scene.add(ripple); let rippleT = 1;
+
+/* =========================================================
+   PAINEL E CONTEÚDO
+   ========================================================= */
+const D = {};
+const esc = s=>String(s).replace(/[&<>"]/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const ul = a=>'<ul class="ls">'+a.map(x=>'<li>'+esc(x)+'</li>').join('')+'</ul>';
+const goBtn = (k, txt, c, small)=>'<button type="button" data-go="'+k+'" style="--c:'+c+'"><i></i>'+esc(txt)+(small?' <small>'+esc(small)+'</small>':'')+'</button>';
+const feats = f=>'<div class="feat">'+f.map(x=>'<div><b>'+esc(x[0])+'</b>'+esc(x[1])+(x[2]?'<em>'+esc(x[2])+'</em>':'')+'</div>').join('')+'</div>';
+const flow = a=>'<div class="flow">'+a.map(x=>'<span>'+esc(x)+'</span>').join('<s>→</s>')+'</div>';
+const copyRow = (lab, val)=>'<div class="contact"><span>'+lab+'</span><code>'+esc(val)+'</code><button type="button" class="copy" data-copy="'+esc(val)+'">Copiar</button></div>';
+
+D.plataforma = { title:'Plataforma Enabley', kind:'A Enabley em uma conversa', c:C.purple, story:{to:86,suf:'%',cap:'Novo Atacarejo: integração de 7 dias para 1 dia'},
+  body:'<p class="lead">Plataforma de treinamento, conhecimento e comunicação para o público operacional, o time que não senta atrás de um computador: mobile-first, com acesso offline e conteúdo criado por IA em minutos.</p>'+
+  '<h3>O pitch em 30 segundos</h3><p>Em operações distribuídas, a maior parte da força de trabalho atua longe de uma estação fixa, mas o conhecimento continua em drives, PDFs e grupos de WhatsApp. A Enabley centraliza esse conhecimento, entrega no celular da pessoa certa no momento da necessidade e mostra para a gestão quem acessou, quem entendeu e quem está preparado.</p>'+
+  '<h3>Os 4 pilares</h3><div class="go">'+PILLARS.map(p=>goBtn(p.k,p.n,p.c,p.sub)).join('')+'</div>'+
+  '<h3>O argumento que sustenta a venda</h3><p>Treinamento sozinho não gera recorrência. Quando a plataforma vira recurso de trabalho, o ciclo se inverte:</p>'+flow(['Plataforma vira recurso','mais acesso','mais engajamento','treinamento mais efetivo'])+
+  '<div class="quote">Plataforma é o que se compra. Operação rodando é o que se constrói.<cite>Use quando o cliente comparar só funcionalidades entre fornecedores.</cite></div>'+
+  '<h3>Modelo de cobrança</h3><p>Licença por usuário com acesso pleno da operação, sem limite mensal de usuário ativo. O custo por pessoa cai conforme a operação cresce.</p>' };
+
+PILLARS.forEach(p=>{ D[p.k] = { title:p.n, kind:p.sub, c:p.c, story:p.story,
+  body:'<p class="lead">'+esc(p.lead)+'</p>'+(p.flow?flow(p.flow):'')+'<h3>O que tem dentro</h3>'+feats(p.feats)+(p.k==='intelligence'?'<h3>Conheça a IA</h3><div class="go">'+goBtn('ia','AI Companion e os 8 recursos de IA','#7B3FE4')+'</div>':'') }; });
+
+D.ia = { title:'AI Companion', kind:'Inteligência artificial na Enabley', c:'#7B3FE4', story:{text:'3 frentes',cap:'de IA: para quem cria, quem gere e quem executa'},
+  body:'<p class="lead">A IA aparece em três frentes, cada uma para uma pessoa diferente. Explicar nessa ordem evita a confusão mais comum: achar que é um chatbot genérico plugado na empresa.</p>'+
+  '<div class="steps"><div><b>Para quem cria</b>Sobe um PPT ou PDF e a IA gera as perguntas. O AI Studio monta um curso alinhado à marca em minutos e gera vídeo de treinamento. Do “preciso treinar” ao treinamento no ar: de semanas para minutos.</div>'+
+  '<div><b>Para quem gere</b>O gestor pergunta em linguagem natural sobre progresso, grupos e certificações, e recebe resposta com link para o relatório e gráfico resumido.</div>'+
+  '<div><b>Para quem executa</b>O colaborador pergunta no meio do trabalho e recebe resposta gerada apenas a partir do conteúdo atribuído a ele.</div></div>'+
+  '<h3>“E se a IA inventar uma resposta?”</h3><p>As respostas do AI Companion vêm apenas do conteúdo atribuído ao aluno. O administrador escolhe quais materiais alimentam a IA e segmenta o acesso por perfil. Quando a fonte oficial muda, a resposta acompanha.</p>'+
+  '<h3>Os 8 recursos de IA</h3>'+feats([['AI Companion','Respostas instantâneas a partir do conteúdo atribuído ao aluno. Pacote padrão: 3 interações por dia por usuário.'],['AI Avatar','Avatar pessoal criado pela IA a partir de uma descrição e de um estilo.'],['AI Auto Check','Corrige respostas abertas com pontuação instantânea.'],['Quiz de Chat com IA','Aprendizado conversacional com perguntas graduais.'],['Perguntas Mágicas de IA','Gera perguntas contextualizadas a partir do próprio material. Incluído no pacote principal.'],['Gerador de Avaliações','Cria avaliações sobre qualquer tema.'],['AI Studio','Curso alinhado à marca em minutos e vídeo a partir de PDF. Janeiro de 2027, módulo à parte.'],['Insights com IA','Perguntas do gestor sobre progresso e certificações, com links e gráficos.']]) };
+
+D.app = { title:'App Enabley', kind:'Acesso e mobilidade', c:C.magenta, story:{text:'Offline',cap:'conteúdo baixado no celular, progresso sincroniza ao reconectar'},
+  body:'<p class="lead">App com a marca do cliente, login simplificado sem e-mail corporativo, conteúdo para uso offline e sincronização do progresso ao reconectar.</p>'+
+  '<h3>Como funciona na prática</h3><div class="steps"><div><b>Direcionamento</b>Trilha por cargo, loja, região, turno e equipe. A pessoa recebe o que a função exige, não o catálogo inteiro.</div><div><b>Acesso</b>App e navegador, celular, tablet ou desktop, com modo offline e login sem e-mail corporativo.</div><div><b>Leitura</b>Conclusão, nota e evolução por loja, função, região e gestor, em tempo real. A IA aponta onde reforçar antes do erro acontecer.</div></div>'+
+  '<h3>Como demonstrar</h3><p>Abra no celular e, se possível, ative o modo avião para provar o offline.</p>' };
+
+D.frontline = { title:'Linha de frente', kind:'Para quem a Enabley existe', c:'#FF7A45', story:{to:100,suf:'%',cap:'de alcance na Cocamar, com acesso via CPF'},
+  body:'<p class="lead">O público operacional: quem trabalha longe de uma mesa, muitas vezes sem e-mail corporativo, sem computador e com pouco tempo disponível.</p>'+
+  '<h3>O que eles recebem</h3>'+ul(['Conteúdo certo no celular, por cargo, loja e turno','Consulta por QR code no equipamento, no estoque ou no PDV','Resposta do AI Companion no meio do trabalho, só com o material oficial','Modo offline para área sem cobertura'])+
+  '<h3>Prova</h3><p>Cocamar saiu de 60% para 100% de alcance dos treinamentos ao trocar o acesso por e-mail corporativo pelo acesso via CPF.</p><div class="go">'+goBtn('case_cocamar','Ver o case Cocamar',SEGS.agro.c)+goBtn('app','Como funciona o app',C.magenta)+'</div>' };
+
+D.escala = { title:'Escala e credenciais', kind:'Empresas que confiam na Enabley', c:'#C98A10', story:{to:1000000,pre:'+',cap:'usuários ativos em varejo, indústria, agro, farma e telecom'},
+  body:'<div class="tiles"><div><b>+1 mi</b><span>usuários ativos</span></div><div><b>+30</b><span>países com operações habilitadas</span></div><div><b>25</b><span>idiomas disponíveis</span></div><div><b>19 anos</b><span>de inovação contínua, desde 2006</span></div><div><b>+200</b><span>cursos prontos em português, em 15 categorias</span></div><div><b>ISO 27001</b><span>e GDPR</span></div></div>'+
+  '<h3>Integrações</h3><p>SAP SuccessFactors, Workday, Cornerstone, Active Directory, TOTVS e Salesforce, com APIs abertas para BI como Power BI.</p>'+
+  '<p class="muted">Vale abrir a lâmina de marcas logo na primeira conversa: ela responde “vocês já atenderam empresa do meu porte?” antes de a pergunta ser feita.</p><div class="go">'+goBtn('marcas','Ver os balões de marcas',C.purple)+'</div>' };
+
+D.negocio = { title:'Caso de negócio', kind:'O cliente vê o próprio dinheiro na conta', c:'#E0457E', story:{text:'R$ 5,2 mi',cap:'por ano em integração, no exemplo de 19 mil colaboradores'},
+  body:'<p class="lead">O que mais acelera uma decisão não é a demo: é o cliente ver o próprio dinheiro. São três alavancas, todas a partir de números que o cliente já tem.</p>'+
+  '<div class="steps"><div><b>Custo de integrar</b>Peça: total de colaboradores, admissões por ano e salário médio de admissão. Dias economizados por admissão × custo do dia × admissões por ano = economia anual.</div>'+
+  '<div><b>Perdas</b>Peça: receita bruta, índice de perdas atual e índice médio do setor. Cada 0,1 ponto percentual recuperado em R$ 5,6 bi de receita vale R$ 5,6 milhões por ano.</div>'+
+  '<div><b>Velocidade de campanha</b>Peça: lojas e cidades, campanhas por ano e dias entre decisão e execução. Dias recuperados × campanhas = dias de venda adicionais.</div></div>'+
+  '<h3>Exemplo real: atacarejo com 19 mil colaboradores</h3><table class="ex"><tr><td>Admissões por ano</td><td>6.000</td></tr><tr><td>Custo do dia de trabalho</td><td>R$ 144</td></tr><tr><td>Dias economizados</td><td>6 por admissão</td></tr><tr><td>Economia por admissão</td><td>R$ 867</td></tr><tr><td>Hoje, por mês, em integração</td><td>R$ 433 mil</td></tr><tr><td>Economia por ano</td><td>R$ 5,2 milhões</td></tr></table>'+
+  '<p class="muted" style="margin-top:10px">Equivale a 36.000 dias ou 164 pessoas-ano. Índice de perdas do setor: 1,51% (Abrappe/KPMG).</p>'+
+  '<div class="quote">Me dá três números: quantos colaboradores, quantas admissões por ano e o salário médio de admissão. Com isso eu te mostro quanto a integração está custando hoje.<cite>Frase para usar em campo</cite></div>' };
+
+D.oferecer = { title:'Quando oferecer', kind:'Sinais de oportunidade', c:'#D6930F', story:{to:11,cap:'sinais de que vale puxar o assunto'},
+  body:'<p class="lead">Se um ou mais desses pontos aparecer na conversa, vale puxar o assunto.</p>'+ul(SIGNALS)+
+  '<h3>Vocabulário</h3><p><b>Use:</b> tempo de integração, padronização entre unidades, adesão, evidência de conformidade, retrabalho, preparo da rede, dúvida no ponto de venda, rotatividade, perda operacional, dias recuperados.</p><p class="muted"><b>Evite no primeiro contato:</b> LXP, KFS, hub de conhecimento, camada de execução, microlearning.</p>' };
+
+const personCard = t=>'<div class="person"><b>'+esc(t.n)+'</b><div class="role">'+esc(t.role)+' · '+esc(t.tag)+'</div><div class="when"><b style="display:inline;font-size:13px">Acione quando:</b> '+esc(t.when)+'</div>'+copyRow('E-mail', t.email)+(t.tel?copyRow('Telefone', t.tel):'')+'</div>';
+D.time = { title:'Time Enabley', kind:'Quem sustenta a parceria', c:C.purple, story:{to:4,cap:'pessoas, cada uma com um papel bem definido'},
+  body:'<p class="lead">Do relacionamento executivo à condução do projeto, passando pela entrega técnica e pelo acompanhamento de Customer Success.</p>'+TEAM.map(personCard).join('') };
+TEAM.forEach(t=>{ D['p_'+t.k] = { title:t.n, kind:t.role, c:t.look.shirt==='#F2B841'?'#C98A10':t.look.shirt, body:personCard(t)+'<h3>Quem acionar em cada situação</h3><div class="go">'+TEAM.map(o=>goBtn('p_'+o.k,o.short,o.look.shirt,o.when)).join('')+'</div>' }; });
+
+D.parceria = { title:'Parceria', kind:'Enabley + Telefónica Tech + Vivo Empresas', c:'#660099', story:{text:'Base comercial',cap:'para o time da Telefónica Tech e Vivo Empresas'},
+  body:'<div class="partner">'+(ASSETS.vivo?'<img src="'+ASSETS.vivo+'" alt="Vivo Empresas">':'')+(ASSETS.tef?'<img src="'+ASSETS.tef+'" alt="Telefónica Tech">':'')+'</div>'+
+  '<p class="lead">Material da parceria: o que a plataforma faz, onde ela entra em cada setor, os resultados dos clientes e como responder às objeções.</p>'+
+  '<h3>Quem acionar</h3><div class="go">'+TEAM.map(o=>goBtn('p_'+o.k,o.short,o.look.shirt,o.when)).join('')+'</div>'+
+  '<h3>Kit para uma reunião</h3><div class="steps"><div><b>Antes</b>Abra o setor do cliente, decore dois nomes de clientes daquele setor e escolha o caso âncora.</div><div><b>Na abertura</b>Use uma frase de abertura e deixe o cliente descrever a dor antes de qualquer demo.</div><div><b>Na demo</b>Siga o “como demonstrar”. Se der, suba um material do próprio cliente e gere perguntas com IA na frente dele.</div><div><b>No fechamento</b>Monte o caso de negócio com os números dele e proponha kick-off com público inicial e de 3 a 5 indicadores.</div></div>'+
+  '<h3>Frases que funcionam</h3>'+['A gente trabalha com operações distribuídas que precisam garantir que uma mudança de procedimento chegue em toda a rede e seja compreendida, não só enviada.','A gente não substitui o que vocês já têm de registro de RH. A gente resolve a execução na linha de frente.','Adiar a decisão não reduz o investimento. Adia o resultado.'].map(f=>'<div class="quote">'+esc(f)+'<div class="contact"><button type="button" class="copy" data-copy="'+esc(f)+'">Copiar</button></div></div>').join('') };
+
+CASES.forEach(cs=>{ const seg = SEGS[cs.seg], lg = cs.logo && LOGO[cs.logo];
+  D['case_'+cs.k] = { title:cs.n, kind:'Case · '+seg.n, c:seg.c, story:cs.story,
+    body:(lg&&lg.url?'<img class="logo-big" src="'+lg.url+'" alt="'+esc(cs.n)+'">':'')+'<p class="lead">'+esc(cs.about)+'</p><div class="bigres"><b>'+esc(cs.big[0])+'</b><span>'+esc(cs.big[1])+'</span></div>'+
+      '<h3>Desafio</h3><p>'+esc(cs.des)+'</p><h3>Solução</h3><p>'+esc(cs.sol)+'</p><h3>Resultados</h3>'+ul(cs.res)+(cs.quote?'<div class="quote">“'+esc(cs.quote[0])+'”<cite>'+esc(cs.quote[1])+'</cite></div>':'')+
+      '<h3>Outros cases</h3><div class="go">'+CASES.filter(o=>o!==cs).map(o=>goBtn('case_'+o.k,o.n,SEGS[o.seg].c,o.lbl)).join('')+'</div>' }; });
+
+Object.values(LOGO).forEach(l=>{ const seg = SEGS[l.seg], cs = CASES.find(c=>c.logo===l.k), peers = Object.values(LOGO).filter(o=>o.seg===l.seg && o!==l);
+  D['cli_'+l.k] = { title:l.n, kind:'Cliente · '+seg.n, c:seg.c, story:cs?cs.story:null,
+    body:(l.url?'<img class="logo-big" src="'+l.url+'" alt="'+esc(l.n)+'">':'')+(cs?'<div class="go" style="margin-bottom:14px">'+goBtn('case_'+cs.k,'Ver o case '+cs.n,seg.c,cs.lbl)+'</div>':'')+
+      '<p class="lead">'+esc(seg.lead)+'</p>'+(seg.dores.length?'<h3>Dores típicas do setor</h3>'+ul(seg.dores):'')+(seg.entra.length?'<h3>Onde a Enabley entra</h3>'+ul(seg.entra):'')+(seg.ancora?'<div class="quote"><b>Caso âncora:</b> '+esc(seg.ancora)+'</div>':'')+
+      (peers.length?'<h3>Outros clientes de '+esc(seg.n)+'</h3><div class="logos">'+peers.map(o=>'<button type="button" data-go="cli_'+o.k+'" aria-label="'+esc(o.n)+'">'+(o.url?'<img src="'+o.url+'" alt="">':esc(o.n))+'</button>').join('')+'</div>':'') }; });
+
+D.marcas = { title:'Marcas no céu', kind:'Empresas que confiam na Enabley', c:C.purple, story:{to:Object.keys(LOGO).length,cap:'marcas de clientes flutuando ao redor do Mundo Enabley'},
+  body:'<p class="lead">Mais de 1 milhão de usuários ativos, em operações de varejo, indústria, agro, farma e telecom. Cada balão é um cliente: clique para ver o setor, as dores e o case.</p>'+
+  Object.keys(SEGS).map(s=>{ const ls = Object.values(LOGO).filter(l=>l.seg===s); if(!ls.length) return ''; return '<h3>'+esc(SEGS[s].n)+'</h3><div class="logos">'+ls.map(o=>'<button type="button" data-go="cli_'+o.k+'" aria-label="'+esc(o.n)+'">'+(o.url?'<img src="'+o.url+'" alt="">':esc(o.n))+'</button>').join('')+'</div>'; }).join('') };
+
+D.casos = { title:'Provas e resultados', kind:'Cite sempre o caso do setor mais próximo', c:'#FF7A45', story:{text:CASES.length+' cases',cap:'com o número que cada operação alcançou'},
+  body:'<p class="lead">Evidência de um par vale mais que qualquer descrição de funcionalidade. Cada pavilhão na borda da ilha é um case.</p><div class="go">'+CASES.map(o=>goBtn('case_'+o.k,o.n,SEGS[o.seg].c,o.lbl)).join('')+'</div>' };
+
+/* ---------- painel ---------- */
+const panel = $('#panel'), pBody = $('#p-body');
+function renderPanel(k){
+  const d = D[k]; if(!d) return;
+  panel.style.setProperty('--pc', d.c); $('#p-kind').textContent = d.kind; $('#p-title').textContent = d.title; pBody.innerHTML = d.body; pBody.scrollTop = 0;
+  panel.classList.remove('open'); void panel.offsetWidth; panel.classList.add('open'); document.body.classList.add('panel-open');
+}
+function hidePanel(){ panel.classList.remove('open'); document.body.classList.remove('panel-open'); }
+pBody.addEventListener('click', e=>{
+  const g = e.target.closest('[data-go]'); if(g){ stopTour(); select(g.dataset.go); return; }
+  const cp = e.target.closest('[data-copy]'); if(cp){ const v = cp.dataset.copy;
+    const ok = ()=>toast('Copiado'); const fb = ()=>{ const code = cp.parentNode.querySelector('code'); if(code){ const r = document.createRange(); r.selectNodeContents(code); const s = getSelection(); s.removeAllRanges(); s.addRange(r); } toast('Selecionado: use Ctrl+C'); };
+    try{ navigator.clipboard.writeText(v).then(ok, fb); }catch(err){ fb(); } }
+});
+let toastT; function toast(t){ const el = $('#toast'); el.textContent = t; el.classList.add('on'); clearTimeout(toastT); toastT = setTimeout(()=>el.classList.remove('on'), 1600); }
+
+/* ---------- número em destaque ---------- */
+const story = $('#story'), sBig = $('#story-big'), sCap = $('#story-cap'), fmt = new Intl.NumberFormat('pt-BR');
+let counter = null;
+function showStory(st, c){
+  if(!st){ story.classList.remove('on'); counter = null; return; }
+  story.style.setProperty('--sc', c||C.purple); sCap.textContent = st.cap;
+  if(st.to != null){ counter = { st, t:RM?1:0 }; sBig.textContent = (st.pre||'')+fmt.format(RM?st.to:0)+(st.suf||''); } else { counter = null; sBig.textContent = st.text; }
+  story.classList.remove('on'); void story.offsetWidth; story.classList.add('on');
+}
+
+/* ---------- doca ---------- */
+const DOCK = [['plataforma','Plataforma',C.purple],['learning','Learning','#FF7A45'],['knowledge','Knowledge','#21B573'],['communication','Communication','#0066FF'],['intelligence','Intelligence','#A0208F'],['ia','AI Companion','#7B3FE4'],['casos','Cases','#FF7A45'],['marcas','Marcas',C.gold],['negocio','Caso de negócio','#FF5C93'],['oferecer','Quando oferecer','#E3A21A'],['frontline','Linha de frente','#FF7A45'],['time','Time','#4B2BA8'],['parceria','Parceria','#660099'],['escala','Escala','#C98A10']];
+const dock = $('#dock');
+DOCK.forEach(d=>{ const b = document.createElement('button'); b.type = 'button'; b.className = 'chip'; b.dataset.k = d[0]; b.style.setProperty('--c', d[2]); b.innerHTML = '<i></i>'+esc(d[1]); b.addEventListener('click', ()=>{ stopTour(); select(d[0]); }); dock.appendChild(b); });
+
+/* =========================================================
+   CÂMERA COM MOLA
+   ========================================================= */
+const HOME = { pos:new THREE.Vector3(0, 40, 80), tgt:new THREE.Vector3(0, 3, 0) };
+const cam = { on:false, pos:new THREE.Vector3(), pv:new THREE.Vector3(), pt:new THREE.Vector3(), tgt:new THREE.Vector3(), tv:new THREE.Vector3(), tt:new THREE.Vector3(), follow:null, off:new THREE.Vector3(), shift:new THREE.Vector3() };
+function fly(pos, tgt){
+  if(!cam.on){ cam.pos.copy(camera.position); cam.tgt.copy(controls.target); cam.pv.set(0,0,0); cam.tv.set(0,0,0); }
+  cam.pt.copy(pos); cam.tt.copy(tgt); cam.on = true;
+  if(RM){ camera.position.copy(pos); controls.target.copy(tgt); cam.on = false; }
+}
+let userDrag = false;
+controls.addEventListener('start', ()=>{ cam.on = false; cam.follow = null; userDrag = true; idle = 0; controls.autoRotate = false; stopTour(); });
+controls.addEventListener('end', ()=>{ userDrag = false; });
+
+const box3 = new THREE.Box3(), vC = new THREE.Vector3(), vS = new THREE.Vector3();
+function frame(root, extra){
+  box3.setFromObject(root); box3.getCenter(vC); box3.getSize(vS);
+  const size = Math.max(vS.x, vS.y, vS.z), dir = camera.position.clone().sub(controls.target).normalize();
+  dir.y = Math.max(dir.y, .42); dir.normalize();
+  const dist = Math.min(70, size*2.1 + 10 + (extra||0));
+  return { tgt:vC.clone(), pos:vC.clone().add(dir.multiplyScalar(dist)) };
+}
+/* no desktop, o painel ocupa a direita: desloca o enquadramento para o assunto ficar à esquerda dele */
+function shiftForPanel(f){
+  const back = f.pos.clone().sub(f.tgt);
+  if(innerWidth <= 640){ /* folha inferior no celular: sobe o assunto para a parte de cima da tela */
+    const bn = back.clone().normalize(), up = new THREE.Vector3(0,1,0).addScaledVector(bn, -bn.y).normalize();
+    const k = back.length()*Math.tan(camera.fov*Math.PI/360)*.55; f.tgt.addScaledVector(up, -k); f.pos.addScaledVector(up, -k); return f; }
+  if(innerWidth < 900) return f;
+  const right = new THREE.Vector3().crossVectors(new THREE.Vector3(0,1,0), back).normalize();
+  const k = back.length()*Math.tan(camera.fov*Math.PI/360)*camera.aspect*(215/innerWidth)*2;
+  f.tgt.addScaledVector(right, k); f.pos.addScaledVector(right, k); return f;
+}
+
+/* =========================================================
+   SELEÇÃO
+   ========================================================= */
+let selKey = null, hoverKey = null;
+const MOVING = { parceria:()=>blimp.g, escala:()=>hot.g };
+function select(k){
+  if(!D[k]) return;
+  idle = 0; controls.autoRotate = false;
+  if(selKey && REG[selKey]) setGlow(selKey, false);
+  selKey = k;
+  dock.querySelectorAll('.chip').forEach(b=>b.classList.toggle('on', b.dataset.k===k));
+  const act = dock.querySelector('.chip.on'); if(act) act.scrollIntoView({ inline:'center', block:'nearest', behavior:RM?'auto':'smooth' });
+  labels.forEach(l=>l.el.classList.toggle('sel', l.key===k));
+  const d = D[k]; renderPanel(k); showStory(d.story, d.c);
+  cam.follow = null;
+  if(k==='marcas'){ const f = shiftForPanel({ pos:new THREE.Vector3(0, 30, 104), tgt:new THREE.Vector3(0, 8, 0) }); fly(f.pos, f.tgt); }
+  else if(k==='casos'){ const f = shiftForPanel({ pos:new THREE.Vector3(0, 68, 62), tgt:new THREE.Vector3(0, 0, 0) }); fly(f.pos, f.tgt); }
+  else if(REG[k]){
+    poke(k, 1); setGlow(k, true);
+    const root = k==='plataforma' ? BLOCKS[3].root : REG[k].roots[0], f = frame(root, k==='plataforma'?16:(k==='frontline'?24:0));
+    if(k==='frontline'){ f.tgt.set(0,2,0); f.pos.set(0,58,56); }
+    const c0 = f.tgt.clone(); shiftForPanel(f); fly(f.pos, f.tgt);
+    if(k.startsWith('cli_') || MOVING[k]){ cam.follow = root; cam.off.copy(f.pos).sub(f.tgt); cam.shift.copy(f.tgt).sub(c0); }
+  }
+}
+function clearSel(){ if(selKey && REG[selKey]) setGlow(selKey, false); selKey = null; cam.follow = null; hidePanel(); showStory(null); dock.querySelectorAll('.chip').forEach(b=>b.classList.remove('on')); labels.forEach(l=>l.el.classList.remove('sel')); }
+function goHome(){ clearSel(); fly(HOME.pos.clone(), HOME.tgt.clone()); }
+$('#p-close').addEventListener('click', ()=>{ stopTour(); clearSel(); });
+addEventListener('keydown', e=>{ if(e.key==='Escape'){ stopTour(); if(selKey) clearSel(); else goHome(); } });
+
+function setGlow(k, on){ (REG[k]?REG[k].roots:[]).forEach(r=>r.traverse(o=>{ if(o.isMesh && o.material && o.material.emissive && !Array.isArray(o.material)){
+  if(on){ if(o.userData.e0 == null){ o.userData.e0 = o.material.emissiveIntensity; o.userData.ec = o.material.emissive.clone(); } if(o.userData.ec.getHex()===0){ o.material = o.material.clone(); o.material.emissive.set(col('#3A2A10')); o.material.emissiveIntensity = .5; o.userData.glowed = true; } }
+  else if(o.userData.glowed){ o.material.emissive.set(0x000000); o.material.emissiveIntensity = o.userData.e0; o.userData.glowed = false; } } })); }
+function setHover(k){ if(k === hoverKey) return;
+  if(hoverKey && REG[hoverKey]) REG[hoverKey].roots.forEach(r=>{ r.userData.j.t = 1; });
+  hoverKey = k; if(k && REG[k]) REG[k].roots.forEach(r=>{ r.userData.j.t = 1.07; r.userData.j.wv += .8; }); }
+
+/* índice */
+$('#btn-index').addEventListener('click', ()=>{
+  stopTour();
+  const grp = [['Plataforma',['plataforma','learning','knowledge','communication','intelligence','ia','app']],['Vender',['oferecer','negocio','casos','frontline']],['Pessoas e parceria',['time','parceria'].concat(TEAM.map(t=>'p_'+t.k))],['Escala',['escala','marcas']]];
+  D.indice = { title:'Índice', kind:'Tudo o que existe no Mundo Enabley', c:C.ink, body:grp.map(g=>'<h3>'+g[0]+'</h3><div class="go">'+g[1].map(k=>goBtn(k, D[k].title, D[k].c)).join('')+'</div>').join('')+'<h3>Cases</h3><div class="go">'+CASES.map(o=>goBtn('case_'+o.k,o.n,SEGS[o.seg].c,o.lbl)).join('')+'</div>' };
+  selKey = null; dock.querySelectorAll('.chip').forEach(b=>b.classList.remove('on')); showStory(null); renderPanel('indice'); fly(HOME.pos.clone(), HOME.tgt.clone());
+});
+
+/* tour guiado */
+const TOUR = ['plataforma','learning','knowledge','communication','intelligence','ia','case_novo','case_chilli','case_coca','marcas','negocio','oferecer','time','parceria','escala'];
+let tour = null;
+function stopTour(){ if(!tour) return; clearInterval(tour.id); tour = null; $('#btn-tour').classList.remove('playing'); $('#tour-txt').textContent = 'Tour guiado'; }
+$('#btn-tour').addEventListener('click', ()=>{
+  if(tour){ stopTour(); return; }
+  tour = { i:0 }; $('#btn-tour').classList.add('playing'); $('#tour-txt').textContent = 'Pausar tour';
+  const step = ()=>{ if(!tour) return; select(TOUR[tour.i % TOUR.length]); tour.i++; };
+  step(); tour.id = setInterval(step, 7000);
+});
+
+/* ponteiro */
+const ray = new THREE.Raycaster(), ptr = new THREE.Vector2(); let downXY = null, idle = 0;
+function hitAt(x, y){ const r = renderer.domElement.getBoundingClientRect(); ptr.set(((x-r.left)/r.width)*2-1, -((y-r.top)/r.height)*2+1); ray.setFromCamera(ptr, camera);
+  return ray.intersectObjects(picks, false).find(hh=>{ for(let o = hh.object; o; o = o.parent) if(!o.visible) return false; return true; }); }
+renderer.domElement.addEventListener('pointermove', e=>{ if(e.pointerType!=='mouse' || userDrag) return; const h = hitAt(e.clientX, e.clientY); const k = h ? h.object.userData.key : null; setHover(k); renderer.domElement.style.cursor = k ? 'pointer' : 'grab'; });
+renderer.domElement.addEventListener('pointerdown', e=>{ downXY = [e.clientX, e.clientY]; });
+renderer.domElement.addEventListener('pointerup', e=>{
+  if(!downXY) return; const mv = Math.hypot(e.clientX-downXY[0], e.clientY-downXY[1]); downXY = null; if(mv > 6) return;
+  const h = hitAt(e.clientX, e.clientY);
+  if(h){ stopTour(); burst(h.point, 26); select(h.object.userData.key); return; }
+  ray.setFromCamera(ptr, camera); const g = ray.intersectObjects(W.userData.ground, false)[0];
+  if(g){ ripple.position.set(g.point.x, g.point.y+.2, g.point.z); rippleT = 0; burst(g.point, 10); }
+  else if(selKey){ stopTour(); clearSel(); }
+});
+/* botão do meio do mouse: arrasta para mover a câmera na vertical e na horizontal */
+let vDrag = null;
+renderer.domElement.addEventListener('mousedown', e=>{ if(e.button===1) e.preventDefault(); });
+renderer.domElement.addEventListener('pointerdown', e=>{
+  if(e.button !== 1) return;
+  e.preventDefault(); e.stopImmediatePropagation();
+  vDrag = { x:e.clientX, y:e.clientY }; renderer.domElement.setPointerCapture(e.pointerId);
+  cam.on = false; cam.follow = null; controls.autoRotate = false; idle = 0; stopTour(); renderer.domElement.style.cursor = 'move';
+}, true);
+renderer.domElement.addEventListener('pointermove', e=>{
+  if(!vDrag) return; e.stopImmediatePropagation();
+  const dx = e.clientX - vDrag.x, dy = e.clientY - vDrag.y; vDrag.x = e.clientX; vDrag.y = e.clientY;
+  const k = camera.position.distanceTo(controls.target)*Math.tan(camera.fov*Math.PI/360)*2/innerHeight;
+  /* vertical: sobe e desce no eixo do mundo */
+  const ny = Math.max(-30, Math.min(45, controls.target.y + dy*k)), my = ny - controls.target.y;
+  /* horizontal: desliza para os lados, no plano do chão, seguindo a direita da câmera */
+  const back = camera.position.clone().sub(controls.target); back.y = 0;
+  const right = new THREE.Vector3().crossVectors(new THREE.Vector3(0,1,0), back).normalize();
+  const mv = right.multiplyScalar(-dx*k); mv.y = my;
+  const nt = controls.target.clone().add(mv), hr = Math.hypot(nt.x, nt.z);
+  if(hr > 70){ const s = 70/hr; mv.x = nt.x*s - controls.target.x; mv.z = nt.z*s - controls.target.z; }
+  controls.target.add(mv); camera.position.add(mv); idle = 0;
+}, true);
+const endVDrag = e=>{ if(!vDrag) return; e.stopImmediatePropagation(); vDrag = null; renderer.domElement.style.cursor = 'grab'; try{ renderer.domElement.releasePointerCapture(e.pointerId); }catch(err){} };
+renderer.domElement.addEventListener('pointerup', endVDrag, true);
+renderer.domElement.addEventListener('pointercancel', endVDrag, true);
+addEventListener('resize', ()=>{ camera.aspect = innerWidth/innerHeight; camera.updateProjectionMatrix(); renderer.setSize(innerWidth, innerHeight); });
+
+/* =========================================================
+   LOOP
+   ========================================================= */
+camera.position.set(0, 95, 175); controls.target.set(0, 8, 0);
+if(RM) camera.position.copy(HOME.pos); else setTimeout(()=>{ if(!cam.on && !selKey) fly(HOME.pos.clone(), HOME.tgt.clone()); }, 250);
+if(!RM) mascot.q.push(...BLOCKS.map((b,i)=>i));
+
+const clock = new THREE.Clock(); let T = 0;
+const v3 = new THREE.Vector3(), tmp = new THREE.Vector3();
+function springStep(o, dt, k, c){ const a = -k*(o.s - o.t) - c*o.v; o.v += a*dt; o.s += o.v*dt; }
+function tick(){
+  const raw = clock.getDelta(), dt = Math.min(raw, .05), sp = RM ? .2 : 1; T += dt*sp; idle += dt;
+  const steps = 2, h = dt/steps;
+
+  /* entrada elástica */
+  /* aba em segundo plano (quadros raros): conclui a entrada sem animar */
+  if(raw > .3 && intros.length){ intros.forEach(it=>{ const j = it.root.userData.j; if(it.mode==='pop'){ j.p = j.pt = 1; } else { it.root.visible = true; it.root.position.y = it.y0; } }); intros.length = 0; }
+  for(let i=intros.length-1;i>=0;i--){ const it = intros[i]; it.delay -= raw; if(it.delay > 0) continue; const j = it.root.userData.j;
+    if(it.mode==='pop'){ j.pt = 1; intros.splice(i,1); continue; }
+    if(!it.root.visible){ it.root.visible = true; it.root.position.y = it.y0 + it.h; }
+    it.vy += 75*dt; it.root.position.y -= it.vy*dt;
+    if(it.root.position.y <= it.y0){ it.root.position.y = it.y0; j.v -= Math.min(9, it.vy*.17); j.wv += (rnd()-.5)*3; intros.splice(i,1); } }
+
+  /* molas: squash & stretch + escala de surgimento + balanço */
+  for(const r of roots){ const j = r.userData.j;
+    for(let s=0;s<steps;s++){ const a = -260*(j.s - j.t) - 13*j.v; j.v += a*h; j.s += j.v*h;
+      const ap = -170*(j.p - j.pt) - 11*j.pv; j.pv += ap*h; j.p += j.pv*h;
+      const aw = -120*j.w - 7*j.wv; j.wv += aw*h; j.w += j.wv*h; }
+    const s = Math.max(.35, j.s), p = Math.max(0, j.p), q = 1/Math.sqrt(s);
+    r.scale.set(j.base.x*p*q, j.base.y*p*s, j.base.z*p*q); r.rotation.z = j.rz + j.w*.06; }
+
+  /* mascote pulando nos blocos */
+  const M = mascot, mj = M.root.userData.j;
+  if(M.phase==='idle'){ M.wait -= dt;
+    M.arms[1].rotation.z = .5 + Math.sin(T*3)*.08; M.arms[0].rotation.z = -.5 - Math.sin(T*3)*.08;
+    if(M.wait <= 0){ if(!M.q.length && !RM){ const n = M.idx < 0 ? 0 : Math.max(0, Math.min(6, M.idx + (Math.random()<.5?-1:1) * (1 + Math.floor(Math.random()*2)))); M.q.push(n); }
+      if(M.q.length){ M.phase = 'anti'; M.t = 0; mj.t = .7; } else M.wait = 2; } }
+  else if(M.phase==='anti'){ M.t += dt; if(M.t > .16){ M.phase = 'air'; M.t = 0; mj.t = 1; mj.v += 6; M.from.copy(M.root.position); M.idx = M.q.shift(); M.to.copy(BLOCKS[M.idx].top);
+      const dx = M.to.x - M.from.x, dz = M.to.z - M.from.z; M.root.rotation.y = Math.abs(dx)+Math.abs(dz) > .01 ? Math.atan2(dx, dz) : 0; M.dur = .5 + Math.min(.4, Math.hypot(dx,dz)*.03); } }
+  else if(M.phase==='air'){ M.t += dt/M.dur; const t = Math.min(1, M.t);
+    M.root.position.lerpVectors(M.from, M.to, t); M.root.position.y += 4*2.6*t*(1-t);
+    M.arms[0].rotation.z = -1.3; M.arms[1].rotation.z = 1.3;
+    if(t >= 1){ M.root.position.copy(M.to); mj.v -= 7.5; BLOCKS[M.idx].root.userData.j.v -= 3.2; M.phase = 'idle'; M.wait = M.q.length ? .08 : 3 + Math.random()*3; if(!M.q.length) M.root.rotation.y = 0; } }
+
+  /* robô de IA */
+  bot.root.position.y = 7.2 + Math.sin(T*1.6)*.45; bot.body.rotation.y = Math.sin(T*.7)*.5; bot.body.rotation.z = Math.sin(T*1.1)*.08;
+  bot.hands.forEach((hh,i)=>{ hh.position.y = -.25 + Math.sin(T*2.2 + i*Math.PI)*.25; });
+
+  /* piscadas */
+  for(const b of blinkers){ if(b.t < 0){ b.next -= dt; if(b.next <= 0){ b.t = 0; } } else { b.t += dt; const k = b.t < .07 ? 1 - b.t/.07 : (b.t < .16 ? (b.t-.07)/.09 : 1); b.g.forEach(e=>e.scale.y = Math.max(.08, k)*(e.userData.sy||1)); if(b.t >= .16){ b.t = -1; b.next = 1.8 + Math.random()*4; b.g.forEach(e=>e.scale.y = e.userData.sy||1); } } }
+
+  /* pessoas do time: respiração e aceno */
+  people.forEach(p=>{ const P = p.g.userData.parts, on = selKey===p.k || hoverKey===p.k;
+    P.head.rotation.z = Math.sin(T*1.3 + p.ph)*.06; P.head.rotation.y = Math.sin(T*.6 + p.ph)*.2;
+    P.arms[1].rotation.z = on ? 2.4 + Math.sin(T*9)*.35 : .12 + Math.sin(T*1.2+p.ph)*.04;
+    P.arms[0].rotation.z = -.12 - Math.sin(T*1.2+p.ph)*.04; });
+
+  /* linha de frente caminhando */
+  walkers.forEach(w=>{ w.a += dt*sp*w.sp; w.ph += dt*sp*9; const x = Math.cos(w.a)*w.r, z = Math.sin(w.a)*w.r;
+    const dirx = -Math.sin(w.a)*Math.sign(w.sp), dirz = Math.cos(w.a)*Math.sign(w.sp);
+    w.g.position.set(x, Math.abs(Math.sin(w.ph))*.14, z); w.g.rotation.y = Math.atan2(dirx, dirz);
+    const P = w.g.userData.parts; P.legs[0].rotation.x = Math.sin(w.ph)*.55; P.legs[1].rotation.x = -Math.sin(w.ph)*.55; P.arms[0].rotation.x = -Math.sin(w.ph)*.5; });
+
+  /* cofrinho e moedas */
+  piggy.coins.forEach(cn=>{ cn.t += dt*sp; if(cn.t < 0) return; if(cn.t < dt*sp*1.5){ cn.m.position.set(piggy.g.position.x, 16, piggy.g.position.z); cn.v = 0; }
+    cn.v = (cn.v||0) + 30*dt*sp; cn.m.position.y -= cn.v*dt*sp; cn.m.rotation.y += dt*6;
+    if(cn.m.position.y < 4.8){ cn.m.position.y = -50; cn.t = -2.4 - Math.random()*1.5; piggy.g.userData.j.v -= 2.6; piggy.g.userData.j.wv += 1.2; } });
+
+  /* balões */
+  balloons.forEach(b=>{ const a = b.a + T*.012; b.g.position.set(Math.cos(a)*b.r, b.h + Math.sin(T*.9 + b.ph)*.7, Math.sin(a)*b.r);
+    b.env.rotation.z = Math.sin(T*1.1 + b.ph)*.08; b.card.quaternion.copy(camera.quaternion);
+    /* balão perto demais da câmera esmaece para não tampar a cena */
+    const near = b.k===selKey || b.k===hoverKey ? 1 : Math.min(1, Math.max(0, (b.g.position.distanceTo(camera.position) - 24)/16));
+    b.env.material.opacity = near; b.card.material.opacity = near; b.g.visible = near > .03; });
+  hot.g.position.y = 24 + Math.sin(T*.5)*1.1; hot.g.rotation.y = Math.sin(T*.2)*.3; hot.fl.scale.setScalar(.8 + Math.random()*.35);
+  hot.ban.rotation.y = Math.atan2(camera.position.x - hot.g.position.x, camera.position.z - hot.g.position.z) - hot.g.rotation.y;
+  blimp.a += dt*sp*.05; const ba = blimp.a; blimp.g.position.set(Math.cos(ba)*50, 28 + Math.sin(T*.4)*1.2, Math.sin(ba)*50); blimp.g.rotation.set(0, -ba - Math.PI/2, Math.sin(T*.6)*.04); blimp.prop.rotation.x += dt*14;
+  clouds.forEach(c=>{ c.a += dt*c.sp*sp; c.g.position.set(Math.cos(c.a)*c.r, c.y + Math.sin(T*.3 + c.r)*1.2, Math.sin(c.a)*c.r); });
+  smokes.forEach(s=>{ const u = (T*.35 + s.off) % 1; s.m.position.y = 5.2 + u*3.4; s.m.position.x = 1.5 + u*.7; s.m.scale.setScalar(.35 + u*1.1); s.m.material.opacity = .75*(1-u); });
+  sway.forEach(s=>{ s.g.rotation.z = Math.sin(T*.9 + s.ph)*.025; });
+  anims.forEach(f=>f(T));
+
+  /* envelopes */
+  packets.forEach(p=>{ if(p.t < 0){ p.t += dt*sp; if(p.t >= 0) launchPacket(p); return; } p.t += dt*sp*.42;
+    if(p.t >= 1){ p.g.visible = false; const e = REG[p.target]; if(e) e.roots.forEach(r=>{ r.userData.j.v -= 2.2; }); p.t = -.6 - Math.random()*1.4; return; }
+    p.curve.getPoint(p.t, p.g.position); p.curve.getTangent(p.t, tmp); p.g.lookAt(tmp.add(p.g.position)); p.g.rotateY(Math.PI/2); });
+
+  /* confete e onda */
+  confetti.forEach(c=>{ if(c.life <= 0) return; c.life -= dt; c.v.y -= 20*dt; c.m.position.addScaledVector(c.v, dt); c.m.rotation.x += c.s.x*dt; c.m.rotation.y += c.s.y*dt; c.m.scale.setScalar(Math.min(1, c.life*2)); if(c.life <= 0 || c.m.position.y < -40) { c.life = 0; c.m.visible = false; } });
+  if(rippleT < 1){ rippleT += dt*1.4; ripple.scale.setScalar(1 + rippleT*5); ripple.material.opacity = .9*(1-rippleT); } else ripple.material.opacity = 0;
+
+  /* câmera */
+  if(cam.follow && !userDrag){ cam.follow.getWorldPosition(vC); vC.y += 2; cam.tt.copy(vC).add(cam.shift); cam.pt.copy(cam.tt).add(cam.off); if(!cam.on){ cam.pos.copy(camera.position); cam.tgt.copy(controls.target); cam.pv.set(0,0,0); cam.tv.set(0,0,0); cam.on = true; } }
+  if(cam.on){
+    for(let s=0;s<steps;s++){
+      v3.copy(cam.pt).sub(cam.pos).multiplyScalar(34).addScaledVector(cam.pv, -9.2); cam.pv.addScaledVector(v3, h); cam.pos.addScaledVector(cam.pv, h);
+      v3.copy(cam.tt).sub(cam.tgt).multiplyScalar(40).addScaledVector(cam.tv, -10.5); cam.tv.addScaledVector(v3, h); cam.tgt.addScaledVector(cam.tv, h); }
+    camera.position.copy(cam.pos); controls.target.copy(cam.tgt);
+    if(!cam.follow && cam.pos.distanceTo(cam.pt) < .02 && cam.pv.length() < .02 && cam.tgt.distanceTo(cam.tt) < .02) cam.on = false;
+  }
+  if(!RM && idle > 14 && !selKey && !tour && !cam.on) controls.autoRotate = true;
+  controls.update();
+
+  /* rótulos */
+  const w = innerWidth, hh = innerHeight;
+  for(const l of labels){
+    let hide = !l.obj.visible || (l.hoverOnly && l.key!==hoverKey && l.key!==selKey);
+    if(!hide){ l.obj.getWorldPosition(v3); const d = v3.distanceTo(camera.position); v3.y += l.off*(l.obj.userData.j ? l.obj.userData.j.p : 1); v3.project(camera);
+      if(v3.z > 1 || Math.abs(v3.x) > 1.15 || Math.abs(v3.y) > 1.15 || (d > l.maxD && l.key!==selKey && l.key!==hoverKey)) hide = true;
+      else l.el.style.transform = 'translate3d('+((v3.x*.5+.5)*w - l.el.offsetWidth/2).toFixed(1)+'px,'+((-v3.y*.5+.5)*hh - l.el.offsetHeight - 6).toFixed(1)+'px,0)'; }
+    if(hide === !l.shown) continue;
+    l.shown = !hide; l.el.classList.toggle('hide', hide);
+  }
+  if(counter && counter.t < 1){ counter.t = Math.min(1, counter.t + dt/1.6); const e = 1 - Math.pow(1-counter.t, 4); sBig.textContent = (counter.st.pre||'')+fmt.format(Math.round(counter.st.to*e))+(counter.st.suf||''); }
+
+  renderer.render(scene, camera);
+  requestAnimationFrame(tick);
+}
+requestAnimationFrame(tick);
+window.MUNDO = { camera, controls, select, goHome };
+})();
+</script>
+</body>
+</html>
